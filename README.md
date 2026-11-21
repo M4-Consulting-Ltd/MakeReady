@@ -10,8 +10,8 @@ building any: open the page on a phone, tablet or wall-mounted screen in the far
 
 Needs Python 3.8+ and nothing else.
 
-1. In Watchtower, create an API key (starts with `wt_`) with the `control` scope and
-   `set_ready`.
+1. In Watchtower, create an API key (starts with `wt_`) with the `control` scope,
+   allowed to send `set_ready` and (for the Resume button) `resume`.
 2. Run `python3 server.py` and open `http://localhost:8080`.
 3. The **Settings** dialog opens on first use. Enter:
    - **Watchtower address**: the IP address or name of the Watchtower computer, e.g.
@@ -64,7 +64,7 @@ is no login; with
 | Green | Ready for the next job | Nothing to do |
 | Solid red, filled button | Plate waiting to be cleared | **Press once the plate is clear** |
 | Red, slow pulse | Printing, with progress, time left and finish time when Watchtower reports them | Disabled |
-| Red, fast blink | Paused or error | Disabled |
+| Red, fast blink | Paused or error | **Resume print**: tap, then tap again within 4 seconds to confirm |
 | Amber | Watchtower reports the printer offline | Disabled |
 
 The page refreshes every 5 seconds. The browser tab title shows how many plates are
@@ -78,6 +78,7 @@ waiting, e.g. `(2) Watchtower SetReady`.
 |---|---|
 | `GET /api/printers` | `GET {base}/printers` |
 | `POST /api/printers/{name}/set-ready` | `POST {base}/printers/{name}/commands` with `{"command":"set_ready"}` |
+| `POST /api/printers/{name}/resume` | the same call with `{"command":"resume"}` |
 | `GET /api/cameras`, `GET /api/camera/{name}` | (camera login only) `GET /api/system/streams`, `GET /api/go2rtc/frame.jpeg?src=…` |
 
 The page talks to this small server rather than straight to Watchtower so the API key
