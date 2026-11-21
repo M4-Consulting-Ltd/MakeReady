@@ -119,6 +119,8 @@
   .job .jmeta { color: var(--muted); font-size: 13px; }
   .job .verdict { font-size: 14px; margin-top: 6px; }
   .job .verdict b { color: var(--red); }
+  .lack { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+          vertical-align: middle; }
   .job .reason { color: var(--muted); font-size: 12px; margin-top: 4px; }
   @media (max-width: 700px) { .job { grid-template-columns: minmax(0, 1fr); } }
 </style>
@@ -528,11 +530,15 @@ function swatch(f) {
   s.title = filamentTitle(f);
   return s;
 }
+// Colour is shown by the swatch, never as a hex code; the code stays in the tooltip.
+function chipText(f) {
+  return f.name ? f.name + ' ' + filamentLabel(f) : filamentLabel(f);
+}
 function chip(f, missing) {
   const c = document.createElement('span');
   c.className = 'chip' + (missing ? ' missing' : '');
   c.title = filamentTitle(f);
-  c.append(swatch(f), f.name ? f.name + ' ' + filamentLabel(f) : filamentLabel(f) + (f.color ? ' ' + f.color : ''));
+  c.append(swatch(f), chipText(f));
   return c;
 }
 function el(tag, cls, text) {
@@ -585,24 +591,30 @@ function renderQueue(q) {
     right.append(chips);
 
     const verdict = el('div', 'verdict');
-    const lacking = j.best ? j.best.missing.map(i => {
-      const f = j.filaments[i];
-      return f.name ? f.name + ' ' + filamentLabel(f) : filamentLabel(f) + ' ' + f.color;
-    }).join(', ') : '';
+    // The missing filaments inline: a swatch and its label each, comma separated.
+    const lacking = [];
+    for (const i of j.best ? j.best.missing : []) {
+      const f = j.filaments[i], item = el('span', 'lack');
+      item.append(swatch(f), chipText(f));
+      if (lacking.length) lacking.push(', ');
+      lacking.push(item);
+    }
     if (j.printer && j.best) {
-      verdict.append(el('b', '', j.printer + ' is missing: '), lacking);
+      verdict.append(el('b', '', j.printer + ' is missing: '), ...lacking);
     } else if (j.printer) {
       verdict.textContent = 'Assigned to ' + j.printer + ', which has everything loaded.';
     } else if (j.ready.length) {
       verdict.textContent = 'Can run on ' + j.ready.join(', ') + '.';
     } else if (j.best) {
       verdict.append(el('b', '', 'No printer has all of these. '),
-                     'Closest is ' + j.best.printer + ': load ' + lacking + '.');
+                     'Closest is ' + j.best.printer + ': load ', ...lacking, '.');
     } else {
       verdict.textContent = 'Waiting for a printer.';
     }
     right.append(verdict);
-    if (j.reason) right.append(el('div', 'reason', 'Watchtower: ' + j.reason));
+    // Watchtower's "no printers have required filament: PLA #FFFFFF, ..." only repeats the
+    // chips above as colour codes, so show its reason only when it says something else.
+    if (j.reason && !/#[0-9a-f]{6}/i.test(j.reason)) right.append(el('div', 'reason', 'Watchtower: ' + j.reason));
     row.append(left, right);
     list.append(row);
   }
