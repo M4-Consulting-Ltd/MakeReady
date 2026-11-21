@@ -536,6 +536,9 @@ def build_queue(queue, assignments, table):
         jobs.append({"id": j.get("id"), "name": _job_name(j, md), "status": j.get("status"),
                      "printer": assigned, "ready": ready, "best": best, "filaments": fils,
                      "exact": exact, "model": model,
+                     # per printer of the right model: which filaments (by index) it lacks
+                     "missing_by": missing, "order": len(jobs),
+                     "created": str(j.get("created_at") or ""),
                      "copies": md.get("quantity_remaining"),
                      "minutes": round(md["print_time_seconds"] / 60)
                      if md.get("print_time_seconds") else None,
