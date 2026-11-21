@@ -141,7 +141,7 @@ has several; printers with no online camera show no picture.
 With the Watchtower login set:
 
 - **On each card:** a row of colour swatches for the filament loaded in its slots. Hover
-  or long-press a swatch for the name, type, grams left and slot. Below it, advice
+  or tap a swatch for the name, type, grams left and slot. Below it, advice
   about the queue:
   - *Idle printer* (plate waiting, or ready): either **Set Ready can pick up a waiting
     job**, naming the oldest job its loaded filament can run, or **No waiting job can
