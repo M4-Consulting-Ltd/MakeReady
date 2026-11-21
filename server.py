@@ -24,6 +24,7 @@ written into config.json by hand:
     WATCHTOWER_INSECURE  "1" to skip HTTPS certificate checks (not recommended)
     HOST                 address to listen on (default 127.0.0.1; 0.0.0.0 for the LAN)
     PORT                 port to listen on (default 8080)
+    CONFIG_DIR           folder holding config.json (environment only; default: this folder)
 
 Python 3.8+, standard library only.
 """
@@ -40,12 +41,14 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# config.json lives next to this file, or in CONFIG_DIR (the Docker image uses /config)
+CONFIG_PATH = os.path.join(os.environ.get("CONFIG_DIR") or HERE, "config.json")
 TIMEOUT = 10
 
 
 def load_config():
     cfg = {}
-    path = os.path.join(HERE, "config.json")
+    path = CONFIG_PATH
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
             cfg = json.load(f)
@@ -59,7 +62,6 @@ def load_config():
 
 CFG = load_config()
 LOCK = threading.Lock()
-CONFIG_PATH = os.path.join(HERE, "config.json")
 SAVED_KEYS = ("WATCHTOWER_URL", "WATCHTOWER_API_KEY", "WATCHTOWER_CA", "WATCHTOWER_INSECURE",
               "WATCHTOWER_USERNAME", "WATCHTOWER_PASSWORD")
 
