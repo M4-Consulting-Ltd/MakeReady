@@ -1,0 +1,7 @@
+{
+  "WATCHTOWER_URL": "https://watchtower.local/api/public/v1",
+  "WATCHTOWER_API_KEY": "wt_your_key_here",
+  "WATCHTOWER_CA": "",
+  "HOST": "127.0.0.1",
+  "PORT": 8080
+}

@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watchtower SetReady</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #fff; --text: #16181d; --muted: #667085; --line: #dde1e7;
+    --green: #16803c; --red: #c62828; --amber: #b26a00; --grey: #8a93a3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111317; --card: #1b1e24; --text: #eceef2; --muted: #9aa3b2; --line: #2c313a;
+            --green: #35b765; --red: #ef5350; --amber: #f0a22e; --grey: #6b7484; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px;
+           padding: 16px; max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0; }
+  #summary { color: var(--muted); font-size: 14px; flex: 1; }
+  #updated { color: var(--muted); font-size: 13px; }
+  #banner { display: none; max-width: 1168px; margin: 0 auto 12px; padding: 10px 14px;
+            border-radius: 8px; background: var(--red); color: #fff; font-size: 14px; }
+  #banner.show { display: block; }
+  main { display: grid; gap: 12px; padding: 0 16px 24px; max-width: 1200px; margin: 0 auto;
+         grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+  .empty { grid-column: 1 / -1; color: var(--muted); padding: 32px 0; text-align: center; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+          padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .name { font-weight: 600; overflow-wrap: anywhere; }
+  .model { color: var(--muted); font-size: 13px; min-height: 18px; }
+  .status { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); flex: none; }
+  .printing .dot { animation: breathe 2.4s ease-in-out infinite; }
+  .paused .dot { animation: breathe .5s steps(2) infinite; }
+  @keyframes breathe { 50% { opacity: .25; } }
+  @media (prefers-reduced-motion: reduce) { .dot { animation: none !important; } }
+  .ready { --c: var(--green); } .plate, .printing, .paused { --c: var(--red); }
+  .offline { --c: var(--amber); }
+  button { font: inherit; font-weight: 600; min-height: 56px; border-radius: 10px;
+           border: 2px solid var(--c); background: transparent; color: var(--c);
+           cursor: default; opacity: .65; }
+  .plate button { background: var(--red); color: #fff; cursor: pointer; opacity: 1; }
+  .plate button:hover { filter: brightness(1.1); }
+  .plate button:active { transform: translateY(1px); }
+  button:focus-visible { outline: 3px solid var(--text); outline-offset: 2px; }
+  .card.sending button { opacity: .6; cursor: progress; }
+  button.plain { min-height: 36px; padding: 0 14px; border: 1px solid var(--line);
+                 color: var(--text); opacity: 1; cursor: pointer; font-weight: 500; font-size: 14px; }
+  button.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+  dialog { width: min(440px, calc(100vw - 32px)); border: 1px solid var(--line);
+           border-radius: 12px; background: var(--card); color: var(--text); padding: 20px; }
+  dialog::backdrop { background: rgba(0, 0, 0, .5); }
+  dialog h2 { font-size: 18px; margin: 0 0 14px; }
+  dialog label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+  dialog input:not([type=checkbox]) { display: block; width: 100%; margin-top: 4px; padding: 9px 10px;
+           font: inherit; color: var(--text); background: var(--bg);
+           border: 1px solid var(--line); border-radius: 8px; }
+  dialog small { display: block; font-weight: 400; color: var(--muted); margin-top: 4px; }
+  dialog .check { display: flex; gap: 10px; align-items: flex-start; }
+  dialog .check input { margin-top: 3px; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+  .msg { font-size: 13px; color: var(--red); min-height: 18px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Watchtower SetReady</h1>
+  <span id="summary"></span>
+  <span id="updated"></span>
+  <button type="button" id="open-settings" class="plain">Settings</button>
+</header>
+<dialog id="settings">
+  <form id="settings-form">
+    <h2>Watchtower connection</h2>
+    <label>Watchtower address
+      <input id="cfg-url" required autocomplete="off" spellcheck="false"
+             placeholder="192.168.1.50 or https://192.168.1.50:8443">
+      <small>IP address or name of the Watchtower computer. Add <code>http://</code> or a
+        port if yours needs one; <code>https://</code> is assumed otherwise.</small>
+    </label>
+    <label>API key
+      <input id="cfg-key" type="password" autocomplete="off" placeholder="wt_…">
+      <small id="cfg-key-hint"></small>
+    </label>
+    <label class="check"><input id="cfg-insecure" type="checkbox">
+      <span>Skip the certificate check
+        <small>Needed for https unless Watchtower's CA certificate file is set on the
+          server. The connection is still encrypted, but not verified.</small></span>
+    </label>
+    <div id="cfg-error" class="msg" role="alert"></div>
+    <div class="actions">
+      <button type="button" id="cfg-cancel" class="plain">Cancel</button>
+      <button type="submit" class="plain primary">Save</button>
+    </div>
+  </form>
+</dialog>
+<div id="banner" role="alert"></div>
+<main id="grid"><p class="empty">Loading printers…</p></main>
+
+<script>
+const POLL_MS = 5000;
+const grid = document.getElementById('grid');
+const banner = document.getElementById('banner');
+const cards = new Map();      // printer name -> {el, state}
+const pending = new Map();    // printer name -> time until which we show "ready" optimistically
+const errors = new Map();     // printer name -> last button error
+let timer = null;
+
+const LABEL = {
+  ready:    ['Ready for the next job',  'Ready'],
+  plate:    ['Plate needs clearing',    'Plate cleared – Set Ready'],
+  printing: ['Printing',                'Printing'],
+  paused:   ['Paused or error',         'Paused / error'],
+  offline:  ['Offline',                 'Offline'],
+};
+
+// Same rules as the ClearCue button: offline = !online; busy = printing (paused/error if a
+// status string says so); ready = ready && online; otherwise the plate is waiting.
+function stateOf(p) {
+  if (!p.online) return 'offline';
+  if (p.busy) {
+    const s = ['status', 'state', 'print_state', 'printStatus', 'job_status', 'gcode_state']
+      .map(k => typeof p[k] === 'string' ? p[k].toUpperCase() : '').join(' ');
+    return /PAUSE|ERROR|FAULT|HALT/.test(s) ? 'paused' : 'printing';
+  }
+  return p.ready ? 'ready' : 'plate';
+}
+
+// Accept {data:{printers:[...]}}, {data:[...]}, {printers:[...]} or a bare array.
+function printersFrom(json) {
+  const d = json && json.data !== undefined ? json.data : json;
+  const list = Array.isArray(d) ? d : d && Array.isArray(d.printers) ? d.printers : null;
+  if (!list) throw new Error('Watchtower replied, but not with a printer list. ' +
+                             'Check that the base URL ends in /api/public/v1.');
+  return list.filter(p => p && typeof p.name === 'string');
+}
+
+function explain(status, text) {
+  let detail = '';
+  try { const j = JSON.parse(text); detail = j.error && j.error.message || j.error || j.message || ''; }
+  catch { detail = ''; }
+  if (typeof detail !== 'string') detail = JSON.stringify(detail);
+  if (status === 401) return 'Watchtower rejected the API key.';
+  if (status === 403) return /FEATURE_NOT_LICENSED/.test(text)
+    ? "Your Watchtower plan doesn't include API access."
+    : 'The API key is not allowed to do this. It needs the control scope with set_ready.';
+  if (status === 404) return 'Not found. Check that the base URL ends in /api/public/v1.';
+  if (status === 429) return 'Watchtower is rate-limiting requests. Trying again shortly.';
+  return detail || 'Watchtower returned HTTP ' + status + '.';
+}
+
+function render(printers) {
+  const seen = new Set();
+  const counts = { ready: 0, plate: 0, printing: 0, paused: 0, offline: 0 };
+  printers.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  if (!printers.length) {
+    cards.clear();
+    grid.innerHTML = '<p class="empty">Watchtower has no printers.</p>';
+  } else if (grid.querySelector('.empty')) grid.innerHTML = '';
+
+  for (const p of printers) {
+    seen.add(p.name);
+    let state = stateOf(p);
+    if (pending.has(p.name)) {            // just pressed: hold "ready" until Watchtower catches up
+      if (state === 'plate' && Date.now() < pending.get(p.name)) state = 'ready';
+      else pending.delete(p.name);
+    }
+    if (state !== 'plate') errors.delete(p.name);
+    counts[state]++;
+
+    let c = cards.get(p.name);
+    if (!c) {
+      const el = document.createElement('section');
+      el.innerHTML = '<div><div class="name"></div><div class="model"></div></div>' +
+        '<div class="status"><span class="dot"></span><span class="label"></span></div>' +
+        '<button type="button"></button><div class="msg" role="status"></div>';
+      el.querySelector('.name').textContent = p.name;
+      el.querySelector('button').addEventListener('click', () => setReady(p.name));
+      c = { el, state: null };
+      cards.set(p.name, c);
+    }
+    grid.appendChild(c.el);               // keeps DOM order sorted
+    const sending = c.el.classList.contains('sending');
+    c.state = state;
+    c.el.className = 'card ' + state + (sending ? ' sending' : '');
+    c.el.querySelector('.model').textContent = p.model || '';
+    let label = LABEL[state][0];
+    if (state === 'printing' && typeof p.progress === 'number')
+      label += ' ' + Math.round(p.progress <= 1 ? p.progress * 100 : p.progress) + '%';
+    c.el.querySelector('.label').textContent = label;
+    const btn = c.el.querySelector('button');
+    btn.textContent = sending ? 'Sending…' : LABEL[state][1];
+    btn.setAttribute('aria-disabled', state !== 'plate' || sending);
+    btn.setAttribute('aria-label', p.name + ': ' + LABEL[state][1]);
+    c.el.querySelector('.msg').textContent = errors.get(p.name) || '';
+  }
+  for (const [name, c] of cards) if (!seen.has(name)) { c.el.remove(); cards.delete(name); }
+
+  document.getElementById('summary').textContent = printers.length
+    ? Object.entries({ plate: 'to clear', ready: 'ready', printing: 'printing',
+                       paused: 'paused', offline: 'offline' })
+        .filter(([k]) => counts[k]).map(([k, t]) => counts[k] + ' ' + t).join(' · ')
+    : '';
+  document.title = (counts.plate ? '(' + counts.plate + ') ' : '') + 'Watchtower SetReady';
+}
+
+let lastPrinters = [];
+async function refresh() {
+  clearTimeout(timer);
+  let delay = POLL_MS;
+  try {
+    const r = await fetch('api/printers', { cache: 'no-store' });
+    const text = await r.text();
+    if (r.status === 503 && !askedSetup) { askedSetup = true; openSettings(); }
+    if (!r.ok) {
+      if (r.status === 429) delay = (parseInt(r.headers.get('Retry-After')) || 30) * 1000;
+      throw new Error(explain(r.status, text));
+    }
+    lastPrinters = printersFrom(JSON.parse(text));
+    render(lastPrinters);
+    banner.classList.remove('show');
+    document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    banner.textContent = (e instanceof TypeError ? "Can't reach the SetReady server." : e.message) +
+      ' Showing the last known state; buttons may be out of date.';
+    banner.classList.add('show');
+    if (grid.querySelector('.empty')) grid.querySelector('.empty').textContent = 'No printers loaded.';
+  }
+  if (!document.hidden) timer = setTimeout(refresh, delay);
+}
+
+async function setReady(name) {
+  const c = cards.get(name);
+  if (!c || c.state !== 'plate' || c.el.classList.contains('sending')) return;
+  c.el.classList.add('sending');
+  errors.delete(name);
+  render(lastPrinters);
+  try {
+    const r = await fetch('api/printers/' + encodeURIComponent(name) + '/set-ready',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (!r.ok) throw new Error(explain(r.status, await r.text()));
+    pending.set(name, Date.now() + 15000);
+  } catch (e) {
+    errors.set(name, e instanceof TypeError ? "Can't reach the SetReady server." : e.message);
+  }
+  c.el.classList.remove('sending');
+  render(lastPrinters);
+  clearTimeout(timer);
+  timer = setTimeout(refresh, 1500);      // give Watchtower a beat, then confirm
+}
+
+// ---- Settings: Watchtower address + API key, saved by the server ----
+const dlg = document.getElementById('settings');
+const $ = id => document.getElementById(id);
+let askedSetup = false, savedUrl = '', hasKey = false;
+
+function keyHint() {
+  const reuse = hasKey && $('cfg-url').value.trim() === savedUrl;
+  $('cfg-key').required = !reuse;
+  $('cfg-key-hint').textContent = reuse
+    ? 'A key is saved. Leave blank to keep it.'
+    : hasKey ? 'Re-enter the key when changing the address.'
+             : 'From Watchtower; needs the control scope with set_ready.';
+}
+
+async function openSettings() {
+  if (dlg.open) return;
+  $('cfg-error').textContent = '';
+  $('cfg-key').value = '';
+  try {
+    const c = await (await fetch('api/config', { cache: 'no-store' })).json();
+    savedUrl = c.url; hasKey = c.hasKey;
+    $('cfg-url').value = c.url;
+    $('cfg-insecure').checked = c.insecure;
+  } catch { /* server unreachable: the form still opens, saving will report it */ }
+  keyHint();
+  dlg.showModal();
+}
+
+$('open-settings').addEventListener('click', openSettings);
+$('cfg-cancel').addEventListener('click', () => dlg.close());
+$('cfg-url').addEventListener('input', keyHint);
+$('settings-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    const r = await fetch('api/config', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: $('cfg-url').value, apiKey: $('cfg-key').value,
+                             insecure: $('cfg-insecure').checked }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Could not save.');
+    dlg.close();
+    grid.innerHTML = '<p class="empty">Loading printers…</p>';
+    cards.clear(); pending.clear(); errors.clear(); lastPrinters = [];
+    document.getElementById('summary').textContent = '';
+    refresh();
+  } catch (err) {
+    $('cfg-error').textContent = err instanceof TypeError ? "Can't reach the SetReady server." : err.message;
+  }
+});
+
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+refresh();
+</script>
+</body>
+</html>
