@@ -109,16 +109,23 @@
   .needs b { font-weight: 600; color: var(--red); }
   .loaded:empty, .needs:empty { display: none; }
   #queue { max-width: var(--page); margin: 0 auto; padding: 0 16px 32px; }
-  #queue h2 { font-size: 16px; margin: 0 0 10px; }
+  .qhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+           gap: 4px 16px; margin-bottom: 10px; }
+  .qhead label { font-size: 14px; color: var(--muted); display: flex; align-items: center;
+                 gap: 6px; cursor: pointer; }
+  #queue h2 { font-size: 16px; margin: 0; }
   #queue h2 span { color: var(--muted); font-weight: 400; font-size: 14px; }
   .job { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
          padding: 12px 14px; margin-bottom: 8px; display: grid; gap: 8px;
          grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); align-items: start; }
   .job.blocked { border-left: 4px solid var(--red); }
+  .job.ok { border-left: 4px solid var(--green); }      /* a printer has every filament */
   .job .jname { font-weight: 600; overflow-wrap: anywhere; }
   .job .jmeta { color: var(--muted); font-size: 13px; }
   .job .verdict { font-size: 14px; margin-top: 6px; }
   .job .verdict b { color: var(--red); }
+  .lack { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+          vertical-align: middle; }
   .job .reason { color: var(--muted); font-size: 12px; margin-top: 4px; }
   @media (max-width: 700px) { .job { grid-template-columns: minmax(0, 1fr); } }
 </style>
@@ -179,7 +186,10 @@
 <div id="camnote"></div>
 <main id="grid"><p class="empty">Loading printers…</p></main>
 <section id="queue" hidden>
-  <h2>Waiting jobs <span id="queue-count"></span></h2>
+  <div class="qhead">
+    <h2>Waiting jobs <span id="queue-count"></span></h2>
+    <label><input type="checkbox" id="hide-ok"> Hide jobs with filament loaded</label>
+  </div>
   <div id="queue-list"></div>
 </section>
 
@@ -528,11 +538,15 @@ function swatch(f) {
   s.title = filamentTitle(f);
   return s;
 }
+// Colour is shown by the swatch, never as a hex code; the code stays in the tooltip.
+function chipText(f) {
+  return f.name ? f.name + ' ' + filamentLabel(f) : filamentLabel(f);
+}
 function chip(f, missing) {
   const c = document.createElement('span');
   c.className = 'chip' + (missing ? ' missing' : '');
   c.title = filamentTitle(f);
-  c.append(swatch(f), f.name ? f.name + ' ' + filamentLabel(f) : filamentLabel(f) + (f.color ? ' ' + f.color : ''));
+  c.append(swatch(f), chipText(f));
   return c;
 }
 function el(tag, cls, text) {
@@ -542,7 +556,18 @@ function el(tag, cls, text) {
   return e;
 }
 
+// "Hide jobs with filament loaded": remembered in this browser.
+const hideOk = document.getElementById('hide-ok');
+let lastQueue = null;
+try { hideOk.checked = localStorage.getItem('hideOk') === '1'; } catch { /* no storage */ }
+hideOk.addEventListener('change', () => {
+  try { localStorage.setItem('hideOk', hideOk.checked ? '1' : '0'); } catch { /* no storage */ }
+  if (lastQueue) renderQueue(lastQueue);
+});
+const jobOk = j => !j.best && (j.printer || j.ready.length);   // a printer has every filament
+
 function renderQueue(q) {
+  lastQueue = q;
   // Printer cards: loaded filament, and what to load for a job that can't run anywhere yet.
   for (const [name, c] of cards) {
     const loaded = c.el.querySelector('.loaded'), needs = c.el.querySelector('.needs');
@@ -563,14 +588,19 @@ function renderQueue(q) {
   }
 
   const section = document.getElementById('queue'), list = document.getElementById('queue-list');
-  const jobs = q.jobs || [];
-  section.hidden = !q.enabled || (!jobs.length && !q.error);
-  document.getElementById('queue-count').textContent = jobs.length ? '(' + jobs.length + ')' : '';
+  const jobs = (q.jobs || []).filter(j => !(hideOk.checked && jobOk(j)));
+  const all = q.jobs || [];
+  section.hidden = !q.enabled || (!all.length && !q.error);
+  document.getElementById('queue-count').textContent = !all.length ? ''
+    : jobs.length === all.length ? '(' + all.length + ')'
+    : '(' + jobs.length + ' of ' + all.length + ' shown)';
   list.replaceChildren();
   if (q.error) list.append(el('p', 'jmeta', q.error));
+  if (all.length && !jobs.length) list.append(el('p', 'jmeta', 'Every waiting job has its filament loaded.'));
   for (const j of jobs) {
     const blocked = !!j.best && !j.printer;
-    const row = el('div', 'job' + (blocked || (j.best && j.printer) ? ' blocked' : ''));
+    const ok = jobOk(j);
+    const row = el('div', 'job' + (j.best ? ' blocked' : ok ? ' ok' : ''));
     const left = el('div'), right = el('div');
     left.append(el('div', 'jname', j.name));
     const meta = [];
@@ -585,24 +615,30 @@ function renderQueue(q) {
     right.append(chips);
 
     const verdict = el('div', 'verdict');
-    const lacking = j.best ? j.best.missing.map(i => {
-      const f = j.filaments[i];
-      return f.name ? f.name + ' ' + filamentLabel(f) : filamentLabel(f) + ' ' + f.color;
-    }).join(', ') : '';
+    // The missing filaments inline: a swatch and its label each, comma separated.
+    const lacking = [];
+    for (const i of j.best ? j.best.missing : []) {
+      const f = j.filaments[i], item = el('span', 'lack');
+      item.append(swatch(f), chipText(f));
+      if (lacking.length) lacking.push(', ');
+      lacking.push(item);
+    }
     if (j.printer && j.best) {
-      verdict.append(el('b', '', j.printer + ' is missing: '), lacking);
+      verdict.append(el('b', '', j.printer + ' is missing: '), ...lacking);
     } else if (j.printer) {
       verdict.textContent = 'Assigned to ' + j.printer + ', which has everything loaded.';
     } else if (j.ready.length) {
       verdict.textContent = 'Can run on ' + j.ready.join(', ') + '.';
     } else if (j.best) {
       verdict.append(el('b', '', 'No printer has all of these. '),
-                     'Closest is ' + j.best.printer + ': load ' + lacking + '.');
+                     'Closest is ' + j.best.printer + ': load ', ...lacking, '.');
     } else {
       verdict.textContent = 'Waiting for a printer.';
     }
     right.append(verdict);
-    if (j.reason) right.append(el('div', 'reason', 'Watchtower: ' + j.reason));
+    // Watchtower's "no printers have required filament: PLA #FFFFFF, ..." only repeats the
+    // chips above as colour codes, so show its reason only when it says something else.
+    if (j.reason && !/#[0-9a-f]{6}/i.test(j.reason)) right.append(el('div', 'reason', 'Watchtower: ' + j.reason));
     row.append(left, right);
     list.append(row);
   }
