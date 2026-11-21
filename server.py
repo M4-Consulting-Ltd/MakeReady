@@ -30,6 +30,8 @@ written into config.json by hand:
     CONFIG_DIR           folder holding config.json (environment only; default: this folder)
 
 Python 3.8+, standard library only.
+
+Copyright (C) 2026 M4 Consulting Ltd. Licensed under the GNU GPL version 3; see LICENSE.
 """
 import http.cookiejar
 import json
