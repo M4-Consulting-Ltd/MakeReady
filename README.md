@@ -42,6 +42,25 @@ server logs in to Watchtower's own web interface instead, which has two conseque
 - That interface is undocumented and can change with a Watchtower update. If it does,
   the pictures stop; the buttons keep working.
 
+### Waiting jobs and filament (optional)
+
+With the same Watchtower login filled in, the page also shows:
+
+- **On each printer card:** a row of colour swatches for the filament loaded in its
+  slots (hover or long-press for the name, type and percentage left), and, when a
+  waiting job can't run anywhere, a **Load for waiting jobs** list of what that printer
+  is missing.
+- **Under the cards:** a **Waiting jobs** list. Each job shows the filaments it needs
+  and one of: which printers can run it now, that its assigned printer is missing
+  something, or that no printer has everything, with the closest printer and what to
+  load into it. Watchtower's own reason is shown when it gives one.
+
+The matching is this page's own estimate, not Watchtower's scheduler: material and
+variant (Basic, Matte) must match; colour must be the same for jobs in "exact" mode and
+near enough for jobs in "closest" mode. Watchtower makes the final decision, so treat
+the suggestion as a guide. Empty slots count as nothing loaded; how much filament is
+left on a spool is not checked.
+
 Other options go in `config.json` (see `config.example.json`) or environment variables
 of the same name:
 
@@ -113,6 +132,7 @@ waiting, e.g. `(2) Watchtower SetReady`.
 | `POST /api/printers/{name}/resume` | the same call with `{"command":"resume"}` |
 | `POST /api/printers/{name}/pause` | the same call with `{"command":"pause"}` |
 | `POST /api/printers/{name}/stop` | the same call with `{"command":"cancel","confirm":true}` (cancels the job) |
+| `GET /api/queue` | (login only) `GET /api/queue`, `GET /api/filament/assignments`, `GET /api/printers` |
 | `GET /api/cameras`, `GET /api/camera/{name}` | (camera login only) `GET /api/system/streams`, `GET /api/go2rtc/frame.jpeg?src=…` |
 
 The page talks to this small server rather than straight to Watchtower so the API key

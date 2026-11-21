@@ -21,8 +21,8 @@ written into config.json by hand:
 
     WATCHTOWER_URL       Watchtower address or API base URL (/api/public/v1 is added)
     WATCHTOWER_API_KEY   wt_... key with the control scope + set_ready
-    WATCHTOWER_USERNAME  optional Watchtower login, used only for camera snapshots
-    WATCHTOWER_PASSWORD  (cameras are not part of the public API the key covers)
+    WATCHTOWER_USERNAME  optional Watchtower login, used for camera snapshots and the
+    WATCHTOWER_PASSWORD  queue / filament view (not part of the public API the key covers)
     WATCHTOWER_CA        path to Watchtower's CA certificate (PEM), for HTTPS
     WATCHTOWER_INSECURE  "1" to skip HTTPS certificate checks (not recommended)
     HOST                 address to listen on (default 127.0.0.1; 0.0.0.0 for the LAN)
@@ -173,7 +173,8 @@ CAM = {}
 
 def cam_reset():
     with CAM_LOCK:
-        CAM.update(opener=None, streams={}, streams_at=0, retry_at=0, error="", frames={})
+        CAM.update(opener=None, streams={}, streams_at=0, retry_at=0, error="", frames={},
+                   queue=None, queue_at=0, names=None, names_at=0)
 
 
 def cam_creds():
@@ -280,6 +281,199 @@ def cam_frame(printer):
     return jpeg
 
 
+# ---- Queue and filament ----------------------------------------------------------------
+# Also private web API, same login as the cameras: the waiting jobs with the filaments
+# each needs, and what every printer has loaded slot by slot. From those we work out
+# which printers could run each job and what would have to be loaded where.
+QUEUE_TTL = 10        # seconds to reuse the answer
+NAMES_TTL = 300       # seconds to reuse the printer id -> name table
+QUEUE_PATH = ("/api/queue?status=queued&status=waiting_filament&status=assigned"
+              "&status=held&limit=200")
+
+
+def _unwrap(reply):
+    return reply.get("data", reply) if isinstance(reply, dict) else reply
+
+
+def _hex(value):
+    """'#C12E1F' / 'c12e1f' -> '#C12E1F', else ''."""
+    v = str(value or "").strip().lstrip("#").upper()[:6]
+    return "#" + v if len(v) == 6 and all(c in "0123456789ABCDEF" for c in v) else ""
+
+
+def _lab(hexcolor):
+    def lin(c):
+        c /= 255.0
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (lin(int(hexcolor[i:i + 2], 16)) for i in (1, 3, 5))
+    xyz = ((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047,
+           0.2126 * r + 0.7152 * g + 0.0722 * b,
+           (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883)
+    fx, fy, fz = (t ** (1 / 3.0) if t > 0.008856 else 7.787 * t + 16 / 116.0 for t in xyz)
+    return 116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)
+
+
+def color_distance(a, b):
+    """Perceptual difference between two '#RRGGBB' colours (CIE76 delta E)."""
+    la, lb = _lab(a), _lab(b)
+    return sum((x - y) ** 2 for x, y in zip(la, lb)) ** 0.5
+
+
+def printer_table():
+    """{printer id: {"name", "model"}} from the private printer list (shape not documented)."""
+    now = time.time()
+    with CAM_LOCK:
+        if CAM["names"] is not None and now - CAM["names_at"] < NAMES_TTL:
+            return CAM["names"]
+    table = {}
+    try:
+        data = _unwrap(json.loads(cam_fetch("/api/printers")))
+        if isinstance(data, dict) and isinstance(data.get("printers"), (list, dict)):
+            data = data["printers"]
+        items = data.items() if isinstance(data, dict) else ((None, p) for p in data or [])
+        for key, p in items:
+            if not isinstance(p, dict):
+                continue
+            pid = next((p[k] for k in ("id", "printer_id", "uuid") if p.get(k)), key)
+            name = next((p[k] for k in ("name", "printer_name", "display_name") if p.get(k)), None)
+            model = next((p[k] for k in ("normalized_printer_model", "model", "printer_model")
+                          if p.get(k)), "")
+            if pid and name:
+                table[str(pid)] = {"name": str(name), "model": str(model)}
+    except Exception:
+        pass
+    with CAM_LOCK:
+        CAM.update(names=table, names_at=time.time() if table else 0)
+    return table
+
+
+def _job_name(job, md):
+    name = str(md.get("original_filename") or job.get("name") or "Job %s" % job.get("id"))
+    for ext in (".gcode.3mf", ".3mf", ".gcode"):
+        if name.lower().endswith(ext):
+            name = name[:-len(ext)]
+    if md.get("plate_name"):
+        name += " \u2014 %s" % md["plate_name"]
+    elif (md.get("plate_count") or 0) > 1 and md.get("plate_index"):
+        name += " \u2014 Plate %s" % md["plate_index"]
+    return name
+
+
+def _matches(need, slot, tolerance):
+    if need["type"] and slot["type"] and need["type"] != slot["type"]:
+        return False
+    if need["variant"] and slot["variant"] and need["variant"].lower() != slot["variant"].lower():
+        return False
+    if not (need["color"] and slot["color"]):
+        return True
+    return color_distance(need["color"], slot["color"]) <= tolerance
+
+
+def build_queue(queue, assignments, table):
+    """Combine Watchtower's queue and filament assignments into what the page shows."""
+    loaded, models = {}, {}
+    for pid, entry in (assignments.get("printers") or {}).items():
+        info = table.get(str(pid)) or {"name": "Printer %s" % str(pid)[:8], "model": ""}
+        models[info["name"]] = info["model"]
+        slots = []
+        for a in (entry or {}).get("assignments") or []:
+            if a.get("is_empty") or not a.get("material_type"):
+                continue
+            ams = a.get("slot_type") == "ams"
+            slots.append({
+                "slot": ("AMS %d" % ((a.get("slot_index") or 0) + 1)) if ams else "External",
+                "order": (0 if ams else 1, a.get("system_index") or 0, a.get("slot_index") or 0),
+                "type": str(a["material_type"]).upper(),
+                "variant": str(a.get("variant") or ""),
+                "color": _hex(a.get("spool_color_hex") or a.get("color_hex")),
+                "name": str(a.get("spool_color") or a.get("color_name") or ""),
+                "pct": a.get("remaining_percentage")})
+        slots.sort(key=lambda x: x.pop("order"))
+        loaded[info["name"]] = slots
+
+    def colour_name(need):
+        for slots in loaded.values():
+            for sl in slots:
+                if sl["name"] and sl["color"] and need["color"] and _matches(need, sl, 3):
+                    return sl["name"]
+        return ""
+
+    jobs, needs = [], {}
+    for j in queue.get("jobs") or []:
+        md = j.get("metadata") or {}
+        fils = []
+        for f in j.get("filaments") or md.get("filaments") or []:
+            need = {"type": str(f.get("type") or j.get("material_type") or "").upper(),
+                    "variant": str(f.get("variant") or ""), "color": _hex(f.get("color")),
+                    "grams": f.get("used_g")}
+            need["name"] = colour_name(need)
+            fils.append(need)
+        # Watchtower's exact mode wants the same colour; closest mode allows a near one.
+        exact = md.get("color_match_mode") == "exact"
+        tolerance = 3 if exact else float(md.get("color_tolerance") or 25)
+        model = str(md.get("normalized_printer_model") or "")
+
+        def compatible(name):
+            m = models.get(name) or ""
+            if not model:
+                return True
+            if m:
+                return m.lower() == model.lower()
+            return name.lower().startswith(model.lower())   # no model known: go by the name
+
+        missing = {name: [i for i, need in enumerate(fils)
+                          if not any(_matches(need, sl, tolerance) for sl in slots)]
+                   for name, slots in loaded.items() if compatible(name)}
+        for i, need in enumerate(fils):
+            need["on"] = sorted(name for name, miss in missing.items() if i not in miss)
+        assigned = j.get("printer_id") or None
+        ready = sorted(name for name, miss in missing.items() if not miss)
+        best = None
+        if assigned and missing.get(assigned):
+            best = {"printer": assigned, "missing": missing[assigned]}
+        elif not assigned and not ready and missing:
+            name = min(missing, key=lambda n: (len(missing[n]), n))
+            best = {"printer": name, "missing": missing[name]}
+        if best:
+            for i in best["missing"]:
+                want = {k: fils[i][k] for k in ("type", "variant", "color", "name")}
+                if want not in needs.setdefault(best["printer"], []):
+                    needs[best["printer"]].append(want)
+        jobs.append({"id": j.get("id"), "name": _job_name(j, md), "status": j.get("status"),
+                     "printer": assigned, "ready": ready, "best": best, "filaments": fils,
+                     "exact": exact, "model": model,
+                     "copies": md.get("quantity_remaining"),
+                     "minutes": round(md["print_time_seconds"] / 60)
+                     if md.get("print_time_seconds") else None,
+                     "reason": str(md.get("filament_rejection") or "")[:300]})
+    # Jobs that can't run anywhere first, then in Watchtower's own order.
+    jobs.sort(key=lambda x: not (x["best"] and not x["printer"]))
+    return {"jobs": jobs, "loaded": loaded, "needs": needs}
+
+
+def queue_data():
+    if not (all(cam_creds()) and root_url()):
+        return {"enabled": False, "error": "", "jobs": [], "loaded": {}, "needs": {}}
+    now = time.time()
+    with CAM_LOCK:
+        if CAM["queue"] is not None and now - CAM["queue_at"] < QUEUE_TTL:
+            return CAM["queue"]
+        if now < CAM["retry_at"]:
+            return {"enabled": True, "error": CAM["error"], "jobs": [], "loaded": {}, "needs": {}}
+    try:
+        queue = _unwrap(json.loads(cam_fetch(QUEUE_PATH)))
+        assignments = _unwrap(json.loads(cam_fetch("/api/filament/assignments")))
+        out = build_queue(queue if isinstance(queue, dict) else {},
+                          assignments if isinstance(assignments, dict) else {}, printer_table())
+        out.update(enabled=True, error="")
+    except Exception as e:
+        out = {"enabled": True, "jobs": [], "loaded": {}, "needs": {},
+               "error": "Queue unavailable: %s." % (getattr(e, "reason", None) or e)}
+    with CAM_LOCK:
+        CAM.update(queue=out, queue_at=time.time())
+    return out
+
+
 cam_reset()
 
 
@@ -347,6 +541,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(200, f.read(), "text/html; charset=utf-8")
         elif path == "/api/config":
             self.send(200, json.dumps(public_config()).encode())
+        elif path == "/api/queue":
+            self.send(200, json.dumps(queue_data()).encode())
         elif path == "/api/cameras":
             streams, err = cam_streams()
             self.send(200, json.dumps({"enabled": all(cam_creds()), "error": err,

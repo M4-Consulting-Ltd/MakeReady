@@ -96,6 +96,31 @@
   button.danger { background: var(--red); color: #fff; border-color: var(--red); }
   #confirm p { margin: 0 0 16px; color: var(--muted); font-size: 15px; }
   .msg { font-size: 13px; color: var(--red); }
+  /* Filament: round swatches for what is loaded, labelled chips for what a job needs */
+  .loaded { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px;
+            color: var(--muted); }
+  .sw { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--grey);
+        background: var(--sw, transparent); flex: none; display: inline-block; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 5px;
+          border: 1px solid var(--line); border-radius: 999px; font-size: 13px; white-space: nowrap; }
+  .chip.missing { border-color: var(--red); border-style: dashed; }
+  .needs { font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
+  .needs b { font-weight: 600; color: var(--red); }
+  .loaded:empty, .needs:empty { display: none; }
+  #queue { max-width: var(--page); margin: 0 auto; padding: 0 16px 32px; }
+  #queue h2 { font-size: 16px; margin: 0 0 10px; }
+  #queue h2 span { color: var(--muted); font-weight: 400; font-size: 14px; }
+  .job { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+         padding: 12px 14px; margin-bottom: 8px; display: grid; gap: 8px;
+         grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); align-items: start; }
+  .job.blocked { border-left: 4px solid var(--red); }
+  .job .jname { font-weight: 600; overflow-wrap: anywhere; }
+  .job .jmeta { color: var(--muted); font-size: 13px; }
+  .job .verdict { font-size: 14px; margin-top: 6px; }
+  .job .verdict b { color: var(--red); }
+  .job .reason { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  @media (max-width: 700px) { .job { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
 <body>
@@ -124,7 +149,7 @@
           server. The connection is still encrypted, but not verified.</small></span>
     </label>
     <fieldset>
-      <legend>Cameras (optional)</legend>
+      <legend>Cameras and queue (optional)</legend>
       <label>Watchtower username
         <input id="cfg-user" autocomplete="off" spellcheck="false" autocapitalize="none">
       </label>
@@ -132,8 +157,8 @@
         <input id="cfg-pass" type="password" autocomplete="off">
         <small id="cfg-pass-hint"></small>
       </label>
-      <small>Camera pictures aren't covered by the API key, so they need a Watchtower
-        login. Leave the username blank for no cameras.</small>
+      <small>Camera pictures, the waiting-jobs list and loaded filament aren't covered by
+        the API key, so they need a Watchtower login. Leave the username blank for none.</small>
     </fieldset>
     <div id="cfg-error" class="msg" role="alert"></div>
     <div class="actions">
@@ -153,6 +178,10 @@
 <div id="banner" role="alert"></div>
 <div id="camnote"></div>
 <main id="grid"><p class="empty">Loading printers…</p></main>
+<section id="queue" hidden>
+  <h2>Waiting jobs <span id="queue-count"></span></h2>
+  <div id="queue-list"></div>
+</section>
 
 <script>
 const POLL_MS = 5000;
@@ -179,7 +208,9 @@ const CARD_MIN = 250, CARD_MAX = 680, GAP = 12, CAM_ASPECT = 9 / 16;
 function layout() {
   const n = cards.size || 1;
   const width = grid.clientWidth - 32;                       // minus side padding
-  const height = window.innerHeight - grid.offsetTop - 24;   // room below the header
+  const queueEl = document.getElementById('queue');
+  const height = window.innerHeight - grid.offsetTop - 24    // room below the header...
+               - (queueEl.hidden ? 0 : queueEl.offsetHeight); // ...and above the queue
   const fit = Math.max(1, Math.floor((width + GAP) / (CARD_MIN + GAP)));
   // Card height = camera picture (scales with width) + everything else (fixed).
   let hasCam = false, chrome = 0;
@@ -298,7 +329,7 @@ function render(printers) {
       const el = document.createElement('section');
       el.innerHTML = '<img class="cam" alt="" hidden><div><div class="name"></div><div class="model"></div></div>' +
         '<div class="status"><span class="dot"></span><span class="label"></span></div>' +
-        '<div class="eta"></div>' +
+        '<div class="eta"></div><div class="loaded"></div><div class="needs"></div>' +
         '<div class="btns"><button type="button" class="main"></button>' +
         '<button type="button" class="mini pause"><svg viewBox="0 0 20 20" aria-hidden="true">' +
         '<rect x="4" y="3" width="4.5" height="14" rx="1"/><rect x="11.5" y="3" width="4.5" height="14" rx="1"/></svg></button>' +
@@ -361,6 +392,7 @@ async function refresh() {
     render(lastPrinters);
     banner.classList.remove('show');
     refreshCams();
+    refreshQueue();
     document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
   } catch (e) {
     banner.textContent = (e instanceof TypeError ? "Can't reach the SetReady server." : e.message) +
@@ -479,6 +511,114 @@ async function refreshCams() {
   }
 }
 
+// ---- Queue and filament: what each waiting job needs and what each printer has loaded ----
+let queueAt = 0, queueBusy = false;
+
+function filamentLabel(f) {
+  return [f.type, f.variant].filter(Boolean).join(' ') || 'Filament';
+}
+function filamentTitle(f) {
+  return [filamentLabel(f), f.name, f.color, f.grams != null ? Math.round(f.grams) + ' g' : '',
+          f.pct != null ? Math.round(f.pct) + '% left' : '', f.slot].filter(Boolean).join(' · ');
+}
+function swatch(f) {
+  const s = document.createElement('span');
+  s.className = 'sw';
+  if (f.color) s.style.setProperty('--sw', f.color);
+  s.title = filamentTitle(f);
+  return s;
+}
+function chip(f, missing) {
+  const c = document.createElement('span');
+  c.className = 'chip' + (missing ? ' missing' : '');
+  c.title = filamentTitle(f);
+  c.append(swatch(f), f.name ? f.name + ' ' + filamentLabel(f) : filamentLabel(f) + (f.color ? ' ' + f.color : ''));
+  return c;
+}
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function renderQueue(q) {
+  // Printer cards: loaded filament, and what to load for a job that can't run anywhere yet.
+  for (const [name, c] of cards) {
+    const loaded = c.el.querySelector('.loaded'), needs = c.el.querySelector('.needs');
+    loaded.replaceChildren();
+    needs.replaceChildren();
+    const slots = (q.loaded || {})[name];
+    if (slots && slots.length) {
+      loaded.append('Loaded');
+      loaded.append(...slots.map(swatch));
+      loaded.setAttribute('aria-label', 'Loaded: ' + slots.map(filamentTitle).join('; '));
+    }
+    const want = (q.needs || {})[name];
+    if (want && want.length) {
+      const chips = el('div', 'chips');
+      chips.append(...want.map(f => chip(f, true)));
+      needs.append(el('b', '', 'Load for waiting jobs'), chips);
+    }
+  }
+
+  const section = document.getElementById('queue'), list = document.getElementById('queue-list');
+  const jobs = q.jobs || [];
+  section.hidden = !q.enabled || (!jobs.length && !q.error);
+  document.getElementById('queue-count').textContent = jobs.length ? '(' + jobs.length + ')' : '';
+  list.replaceChildren();
+  if (q.error) list.append(el('p', 'jmeta', q.error));
+  for (const j of jobs) {
+    const blocked = !!j.best && !j.printer;
+    const row = el('div', 'job' + (blocked || (j.best && j.printer) ? ' blocked' : ''));
+    const left = el('div'), right = el('div');
+    left.append(el('div', 'jname', j.name));
+    const meta = [];
+    if (j.copies > 1) meta.push(j.copies + ' copies left');
+    if (j.minutes) meta.push(Math.floor(j.minutes / 60) + 'h ' + (j.minutes % 60) + 'm');
+    if (j.model) meta.push(j.model);
+    left.append(el('div', 'jmeta', meta.join(' · ')));
+
+    const missing = new Set(j.best ? j.best.missing : []);
+    const chips = el('div', 'chips');
+    j.filaments.forEach((f, i) => chips.append(chip(f, missing.has(i))));
+    right.append(chips);
+
+    const verdict = el('div', 'verdict');
+    const lacking = j.best ? j.best.missing.map(i => {
+      const f = j.filaments[i];
+      return f.name ? f.name + ' ' + filamentLabel(f) : filamentLabel(f) + ' ' + f.color;
+    }).join(', ') : '';
+    if (j.printer && j.best) {
+      verdict.append(el('b', '', j.printer + ' is missing: '), lacking);
+    } else if (j.printer) {
+      verdict.textContent = 'Assigned to ' + j.printer + ', which has everything loaded.';
+    } else if (j.ready.length) {
+      verdict.textContent = 'Can run on ' + j.ready.join(', ') + '.';
+    } else if (j.best) {
+      verdict.append(el('b', '', 'No printer has all of these. '),
+                     'Closest is ' + j.best.printer + ': load ' + lacking + '.');
+    } else {
+      verdict.textContent = 'Waiting for a printer.';
+    }
+    right.append(verdict);
+    if (j.reason) right.append(el('div', 'reason', 'Watchtower: ' + j.reason));
+    row.append(left, right);
+    list.append(row);
+  }
+  layout();
+}
+
+async function refreshQueue() {
+  if (queueBusy || Date.now() - queueAt < 15000) return;
+  queueBusy = true;
+  try {
+    renderQueue(await (await fetch('api/queue', { cache: 'no-store' })).json());
+    queueAt = Date.now();
+  } catch { /* keep the last view; the printer poll reports a dead server */ }
+  queueBusy = false;
+}
+
 // ---- Settings: Watchtower address + API key, saved by the server ----
 const dlg = document.getElementById('settings');
 const $ = id => document.getElementById(id);
@@ -531,7 +671,7 @@ $('settings-form').addEventListener('submit', async e => {
     dlg.close();
     grid.innerHTML = '<p class="empty">Loading printers…</p>';
     cards.clear(); pending.clear(); errors.clear(); lastPrinters = [];
-    camsAt = 0; camFails.clear();
+    camsAt = 0; camFails.clear(); queueAt = 0;
     document.getElementById('summary').textContent = '';
     refresh();
   } catch (err) {
