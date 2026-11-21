@@ -570,12 +570,13 @@ def build_queue(queue, assignments, table):
     return {"jobs": jobs, "loaded": loaded, "needs": needs}
 
 
-def queue_data():
+def queue_data(fresh=False):
+    """fresh: skip the short cache (the page's Refresh button), but not more than every 2 s."""
     if not (all(cam_creds()) and root_url()):
         return {"enabled": False, "error": "", "jobs": [], "loaded": {}, "needs": {}}
     now = time.time()
     with CAM_LOCK:
-        if CAM["queue"] is not None and now - CAM["queue_at"] < QUEUE_TTL:
+        if CAM["queue"] is not None and now - CAM["queue_at"] < (2 if fresh else QUEUE_TTL):
             return CAM["queue"]
         if now < CAM["retry_at"]:
             return {"enabled": True, "error": CAM["error"], "jobs": [], "loaded": {}, "needs": {}}
@@ -676,7 +677,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/config":
             self.send(200, json.dumps(public_config()).encode())
         elif path == "/api/queue":
-            self.send(200, json.dumps(queue_data()).encode())
+            fresh = "fresh=1" in self.path.partition("?")[2].split("&")
+            self.send(200, json.dumps(queue_data(fresh)).encode())
         elif path == "/api/cameras":
             streams, err = cam_streams()
             self.send(200, json.dumps({"enabled": all(cam_creds()), "error": err,
