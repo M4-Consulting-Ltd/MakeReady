@@ -8,6 +8,9 @@ API key stays on this machine and the browser has no CORS or certificate problem
     POST /api/printers/{name}/set-ready  -> POST {base}/printers/{name}/commands
                                             {"command": "set_ready"}
     POST /api/printers/{name}/resume     -> the same call with {"command": "resume"}
+    POST /api/printers/{name}/pause      -> the same call with {"command": "pause"}
+    POST /api/printers/{name}/stop       -> the same call with {"command": "cancel",
+                                            "confirm": true}
 
 The API calls are the same ones the ClearCue hardware button makes
 (https://github.com/ThePrintBench/ClearCue).
@@ -315,7 +318,11 @@ def upstream(method, path, body=None):
 
 
 # The only printer commands the page can send: URL suffix -> Watchtower command.
-COMMANDS = {"set-ready": "set_ready", "resume": "resume"}
+# "stop" cancels the job; Watchtower wants confirm:true with it. The page asks first.
+COMMANDS = {"set-ready": {"command": "set_ready"},
+            "resume": {"command": "resume"},
+            "pause": {"command": "pause"},
+            "stop": {"command": "cancel", "confirm": True}}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -379,12 +386,12 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send(200, json.dumps(public_config()).encode())
             return
-        # /api/printers/{name}/set-ready or /resume ; {name} arrives URL-encoded
+        # /api/printers/{name}/<one of COMMANDS> ; {name} arrives URL-encoded
         if len(parts) == 5 and parts[:3] == ["", "api", "printers"] and parts[3] \
                 and parts[4] in COMMANDS:
             name = urllib.parse.quote(urllib.parse.unquote(parts[3]), safe="")
             status, body, ra = upstream("POST", "/printers/%s/commands" % name,
-                                        {"command": COMMANDS[parts[4]]})
+                                        COMMANDS[parts[4]])
             self.send(status, body or b"{}", retry_after=ra)
         else:
             self.send(404, b'{"error":"Not found"}')
