@@ -141,12 +141,15 @@ has several; printers with no online camera show no picture.
 With the Watchtower login set:
 
 - **On each card:** a row of colour swatches for the filament loaded in its slots. Hover
-  or long-press a swatch for the name, type, percentage left and slot. Below it, advice
+  or long-press a swatch for the name, type, grams left and slot. Below it, advice
   about the queue:
   - *Idle printer* (plate waiting, or ready): either **Set Ready can pick up a waiting
     job**, naming the oldest job its loaded filament can run, or **No waiting job can
     run here yet**, with the job that is the closest match (fewest filaments to load;
     the oldest job wins a tie) and exactly what to load for it.
+    If the job needs more of a filament than is left on the loaded spool, the card says
+    **Not enough filament loaded**, and pressing Set Ready asks first; you can carry on
+    anyway.
   - *Busy printer:* a red **Load for waiting jobs** list, only when a job can't run
     anywhere and this printer is the closest fit.
 - **Under the cards:** the **Waiting jobs** list. Each job shows the filaments it needs
@@ -168,7 +171,9 @@ The matching is this page's own estimate, not Watchtower's scheduler:
 - material must match, and variant (Basic, Matte) when both are known;
 - colour must be the same for jobs in "exact" mode, and close for jobs in "closest" mode;
 - only printers of the job's model are considered;
-- empty slots count as nothing loaded, and how much is left on a spool is not checked.
+- empty slots count as nothing loaded;
+- grams left is an estimate: the printer's reported percentage of the spool's full
+  weight. It is used for the low-filament warning, not for matching.
 
 Watchtower makes the final decision, so treat "load X into Y" as a guide.
 
