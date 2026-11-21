@@ -167,11 +167,33 @@
       <small>Camera pictures, the waiting-jobs list and loaded filament aren't covered by
         the API key, so they need a Watchtower login. Leave the username blank for none.</small>
     </fieldset>
+    <fieldset>
+      <legend>Page password</legend>
+      <label>New password
+        <input id="cfg-pagepass" type="password" autocomplete="new-password" minlength="8">
+        <small id="cfg-pagepass-hint"></small>
+      </label>
+      <label class="check" id="cfg-remove-row" hidden><input id="cfg-remove" type="checkbox">
+        <span>Remove the password
+          <small>Anyone who can reach this page will be able to use it.</small></span>
+      </label>
+    </fieldset>
     <div id="cfg-error" class="msg" role="alert"></div>
     <div class="actions">
+      <button type="button" id="cfg-logout" class="plain" hidden style="margin-right:auto">Log out</button>
       <button type="button" id="cfg-cancel" class="plain">Cancel</button>
       <button type="submit" class="plain primary">Save</button>
     </div>
+  </form>
+</dialog>
+<dialog id="login" aria-labelledby="login-title">
+  <form id="login-form">
+    <h2 id="login-title">Log in</h2>
+    <label>Password
+      <input id="login-pass" type="password" autocomplete="current-password" required>
+    </label>
+    <div id="login-error" class="msg" role="alert"></div>
+    <div class="actions"><button type="submit" class="plain primary">Log in</button></div>
   </form>
 </dialog>
 <dialog id="confirm" aria-labelledby="confirm-title">
@@ -386,6 +408,47 @@ function render(printers) {
   document.title = (counts.plate ? '(' + counts.plate + ') ' : '') + 'Watchtower SetReady';
 }
 
+// ---- Page login: when a page password is set, the server answers 401 {login:true} until
+// this browser has logged in. Every request goes through this wrapper, which opens the
+// login dialog on that answer; polling stops until the login succeeds.
+let needLogin = false;
+const plainFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const r = await plainFetch(...args);
+  if (r.status === 401) {
+    const body = await r.clone().json().catch(() => ({}));
+    if (body.login) showLogin();
+  }
+  return r;
+};
+const loginDlg = document.getElementById('login');
+function showLogin() {
+  needLogin = true;
+  clearTimeout(timer);
+  for (const d of document.querySelectorAll('dialog[open]')) if (d !== loginDlg) d.close();
+  if (loginDlg.open) return;
+  document.getElementById('login-error').textContent = '';
+  document.getElementById('login-pass').value = '';
+  loginDlg.showModal();
+}
+loginDlg.addEventListener('cancel', e => e.preventDefault());     // Escape can't dismiss it
+document.getElementById('login-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const err = document.getElementById('login-error');
+  try {
+    const r = await plainFetch('api/login', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: document.getElementById('login-pass').value }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Could not log in.');
+    needLogin = false;
+    loginDlg.close();
+    camsAt = 0; queueAt = 0;
+    refresh();
+  } catch (ex) {
+    err.textContent = ex instanceof TypeError ? "Can't reach the SetReady server." : ex.message;
+  }
+});
+
 let lastPrinters = [];
 async function refresh() {
   clearTimeout(timer);
@@ -393,6 +456,7 @@ async function refresh() {
   try {
     const r = await fetch('api/printers', { cache: 'no-store' });
     const text = await r.text();
+    if (needLogin) return;                       // login dialog is up; it restarts polling
     if (r.status === 503 && !askedSetup) { askedSetup = true; openSettings(); }
     if (!r.ok) {
       if (r.status === 429) delay = (parseInt(r.headers.get('Retry-After')) || 30) * 1000;
@@ -658,7 +722,8 @@ async function refreshQueue() {
 // ---- Settings: Watchtower address + API key, saved by the server ----
 const dlg = document.getElementById('settings');
 const $ = id => document.getElementById(id);
-let askedSetup = false, savedUrl = '', hasKey = false, savedUser = '', hasPass = false;
+let askedSetup = false, savedUrl = '', hasKey = false, savedUser = '', hasPass = false,
+    hasPagePass = false;
 
 function keyHint() {
   const reuse = hasKey && $('cfg-url').value.trim() === savedUrl;
@@ -671,19 +736,26 @@ function keyHint() {
   const keepPass = hasPass && user === savedUser && $('cfg-url').value.trim() === savedUrl;
   $('cfg-pass').required = !!user && !keepPass;
   $('cfg-pass-hint').textContent = user && keepPass ? 'A password is saved. Leave blank to keep it.' : '';
+  $('cfg-pagepass-hint').textContent = hasPagePass
+    ? 'A password is set. Leave blank to keep it; a new one logs out every other device.'
+    : 'None set: anyone who can reach this page can press the buttons and change settings. At least 8 characters.';
+  $('cfg-remove-row').hidden = !hasPagePass;
+  $('cfg-logout').hidden = !hasPagePass;
 }
 
 async function openSettings() {
   if (dlg.open) return;
   $('cfg-error').textContent = '';
+  $('cfg-pagepass').value = ''; $('cfg-remove').checked = false;
   $('cfg-key').value = '';
   $('cfg-pass').value = '';
   try {
     const c = await (await fetch('api/config', { cache: 'no-store' })).json();
+    if (needLogin) return;
     savedUrl = c.url; hasKey = c.hasKey;
     $('cfg-url').value = c.url;
     $('cfg-insecure').checked = c.insecure;
-    savedUser = c.username || ''; hasPass = !!c.hasPassword;
+    savedUser = c.username || ''; hasPass = !!c.hasPassword; hasPagePass = !!c.hasPagePassword;
     $('cfg-user').value = savedUser;
   } catch { /* server unreachable: the form still opens, saving will report it */ }
   keyHint();
@@ -692,6 +764,10 @@ async function openSettings() {
 
 $('open-settings').addEventListener('click', openSettings);
 $('cfg-cancel').addEventListener('click', () => dlg.close());
+$('cfg-logout').addEventListener('click', async () => {
+  await plainFetch('api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
+  showLogin();
+});
 $('cfg-url').addEventListener('input', keyHint);
 $('cfg-user').addEventListener('input', keyHint);
 $('settings-form').addEventListener('submit', async e => {
@@ -701,7 +777,9 @@ $('settings-form').addEventListener('submit', async e => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: $('cfg-url').value, apiKey: $('cfg-key').value,
                              insecure: $('cfg-insecure').checked,
-                             username: $('cfg-user').value, password: $('cfg-pass').value }) });
+                             username: $('cfg-user').value, password: $('cfg-pass').value,
+                             pagePassword: $('cfg-pagepass').value,
+                             removePagePassword: $('cfg-remove').checked }) });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || 'Could not save.');
     dlg.close();

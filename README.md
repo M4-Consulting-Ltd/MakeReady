@@ -74,9 +74,25 @@ of the same name:
 - `WATCHTOWER_URL`, `WATCHTOWER_API_KEY`, `WATCHTOWER_USERNAME`, `WATCHTOWER_PASSWORD`:
   the same values as the Settings dialog.
 
-**Anyone who can open the page can press the buttons and change the settings.** There
-is no login; with
-`HOST` set to `0.0.0.0`, keep it on a network you trust.
+### Page password
+
+Without a password, **anyone who can open the page can press the buttons, stop prints
+and change the settings.** To lock it, open **Settings → Page password** and enter one
+(at least 8 characters). From then on every device has to log in once before it can see
+or do anything; it stays logged in for a year.
+
+- Changing the password logs out every other device. **Remove the password** in Settings
+  opens the page up again; **Log out** logs out just this device.
+- Five wrong passwords from one address block further tries from it for a minute.
+- The password is stored as a salted hash in `config.json`, never in plain text. It can
+  also be given as the `PAGE_PASSWORD` environment variable, which takes precedence.
+- Forgotten it? Delete the `PAGE_PASSWORD_HASH` line's value in `config.json` (set it to
+  `""`) and restart.
+
+The page is served over plain HTTP, so the password and the session travel unencrypted
+on your network. That is fine on a trusted home or workshop network; do not expose the
+page to the internet. For access from outside, use a VPN or put it behind a reverse
+proxy that adds HTTPS.
 
 ## Docker and Unraid
 
