@@ -140,8 +140,9 @@ With the Watchtower login set:
   or long-press a swatch for the name, type, percentage left and slot. When a waiting
   job can't run anywhere and this printer is the closest fit, a red **Load for waiting
   jobs** list shows what it is missing.
-- **Under the cards:** the **Waiting jobs** list. Each job shows the filaments it needs,
-  with missing ones outlined in red, and a verdict:
+- **Under the cards:** the **Waiting jobs** list. Each job shows the filaments it needs
+  and the weight of each, e.g. "Gold PLA Basic (15g)", with missing ones outlined in
+  red, and a verdict:
   - which printers can run it now;
   - its assigned printer has everything, or is missing something;
   - no printer has everything, with the closest printer and what to load into it.
