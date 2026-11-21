@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- Watchtower SetReady. Copyright (C) 2026 M4 Consulting Ltd. Licensed under the GNU GPL version 3; see LICENSE. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -16,11 +17,14 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px;
+  /* Row 1: title + Settings. Row 2: counts + last update. Same on phone and desktop. */
+  header { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 12px;
            padding: 16px; max-width: 1200px; margin: 0 auto; }
   h1 { font-size: 20px; margin: 0; }
-  #summary { color: var(--muted); font-size: 14px; flex: 1; }
-  #updated { color: var(--muted); font-size: 13px; }
+  #open-settings { grid-row: 1; grid-column: 2; justify-self: end; }
+  #summary { grid-row: 2; grid-column: 1; color: var(--muted); font-size: 14px; }
+  #updated { grid-row: 2; grid-column: 2; color: var(--muted); font-size: 13px;
+             text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
   #banner { display: none; max-width: 1168px; margin: 0 auto 12px; padding: 10px 14px;
             border-radius: 8px; background: var(--red); color: #fff; font-size: 14px; }
   #banner.show { display: block; }
@@ -75,6 +79,17 @@
                     padding: 10px 12px 12px; }
   dialog legend { font-size: 14px; font-weight: 600; padding: 0 4px; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+  .btns { display: flex; gap: 8px; }
+  .btns .main { flex: 1; min-width: 0; }
+  .card button.mini { flex: none; width: 52px; padding: 0; display: none; place-items: center;
+                      background: transparent; color: var(--text); border: 2px solid var(--line);
+                      opacity: 1; cursor: pointer; }
+  .card button.mini:hover { border-color: var(--text); filter: none; }
+  .card button.mini svg { width: 20px; height: 20px; fill: currentColor; }
+  .printing button.mini, .paused button.stop { display: grid; }
+  .card.sending button.mini { opacity: .4; cursor: progress; }
+  button.danger { background: var(--red); color: #fff; border-color: var(--red); }
+  #confirm p { margin: 0 0 16px; color: var(--muted); font-size: 15px; }
   .msg { font-size: 13px; color: var(--red); min-height: 18px; }
 </style>
 </head>
@@ -121,6 +136,14 @@
       <button type="submit" class="plain primary">Save</button>
     </div>
   </form>
+</dialog>
+<dialog id="confirm" aria-labelledby="confirm-title">
+  <h2 id="confirm-title"></h2>
+  <p id="confirm-text"></p>
+  <div class="actions">
+    <button type="button" id="confirm-cancel" class="plain">Keep printing</button>
+    <button type="button" id="confirm-ok" class="plain danger"></button>
+  </div>
 </dialog>
 <div id="banner" role="alert"></div>
 <div id="camnote"></div>
@@ -202,7 +225,7 @@ function explain(status, text) {
   if (status === 401) return 'Watchtower rejected the API key.';
   if (status === 403) return /FEATURE_NOT_LICENSED/.test(text)
     ? "Your Watchtower plan doesn't include API access."
-    : 'The API key is not allowed to do this. It needs the control scope with set_ready and resume.';
+    : 'The API key is not allowed to do this. It needs the control scope and permission for this command.';
   if (status === 404) return 'Not found. Check that the base URL ends in /api/public/v1.';
   if (status === 429) return 'Watchtower is rate-limiting requests. Trying again shortly.';
   return detail || 'Watchtower returned HTTP ' + status + '.';
@@ -234,10 +257,19 @@ function render(printers) {
       el.innerHTML = '<img class="cam" alt="" hidden><div><div class="name"></div><div class="model"></div></div>' +
         '<div class="status"><span class="dot"></span><span class="label"></span></div>' +
         '<div class="eta"></div>' +
-        '<button type="button"></button><div class="msg" role="status"></div>';
+        '<div class="btns"><button type="button" class="main"></button>' +
+        '<button type="button" class="mini pause"><svg viewBox="0 0 20 20" aria-hidden="true">' +
+        '<rect x="4" y="3" width="4.5" height="14" rx="1"/><rect x="11.5" y="3" width="4.5" height="14" rx="1"/></svg></button>' +
+        '<button type="button" class="mini stop"><svg viewBox="0 0 20 20" aria-hidden="true">' +
+        '<rect x="3.5" y="3.5" width="13" height="13" rx="2"/></svg></button></div>' +
+        '<div class="msg" role="status"></div>';
       el.querySelector('.name').textContent = p.name;
       el.querySelector('.cam').alt = 'Camera: ' + p.name;
-      el.querySelector('button').addEventListener('click', () => press(p.name));
+      el.querySelector('.main').addEventListener('click', () => press(p.name));
+      el.querySelector('.pause').addEventListener('click', () => askThenSend(p.name, 'pause'));
+      el.querySelector('.stop').addEventListener('click', () => askThenSend(p.name, 'stop'));
+      el.querySelector('.pause').setAttribute('aria-label', 'Pause the print on ' + p.name);
+      el.querySelector('.stop').setAttribute('aria-label', 'Stop the print on ' + p.name);
       c = { el, state: null };
       cards.set(p.name, c);
     }
@@ -252,7 +284,7 @@ function render(printers) {
     c.el.querySelector('.label').textContent = label;
     c.el.querySelector('.eta').textContent =
       state === 'printing' ? etaText(p, true) : state === 'paused' ? etaText(p, false) : '';
-    const btn = c.el.querySelector('button');
+    const btn = c.el.querySelector('.main');
     const text = armed ? 'Tap again to resume' : LABEL[state][1];
     c.el.classList.toggle('armed', armed);
     btn.textContent = sending ? 'Sending…' : text;
@@ -316,15 +348,56 @@ async function press(name) {
     }
     confirmUntil.delete(name);
   }
+  send(name, state === 'paused' ? 'resume' : 'set-ready');
+}
+
+// Pause and Stop sit beside the main button on a printing card (Stop also on a paused one).
+// Both ask first in a dialog; Stop cancels the job for good.
+const confirmDlg = document.getElementById('confirm');
+let confirmDone = null;
+function ask(title, text, okLabel, cancelLabel) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-text').textContent = text;
+  document.getElementById('confirm-ok').textContent = okLabel;
+  document.getElementById('confirm-cancel').textContent = cancelLabel;
+  if (confirmDone) confirmDone(false);
+  confirmDlg.returnValue = '';
+  confirmDlg.showModal();
+  document.getElementById('confirm-cancel').focus();     // Enter must not confirm by accident
+  return new Promise(resolve => { confirmDone = resolve; });
+}
+document.getElementById('confirm-ok').addEventListener('click', () => confirmDlg.close('ok'));
+document.getElementById('confirm-cancel').addEventListener('click', () => confirmDlg.close());
+confirmDlg.addEventListener('close', () => {
+  const done = confirmDone; confirmDone = null;
+  if (done) done(confirmDlg.returnValue === 'ok');
+});
+
+async function askThenSend(name, action) {
+  const c = cards.get(name);
+  const allowed = () => c.state === 'printing' || (action === 'stop' && c.state === 'paused');
+  if (!c || !allowed() || c.el.classList.contains('sending')) return;
+  const ok = action === 'pause'
+    ? await ask('Pause ' + name + '?', 'The print stops where it is and can be resumed.',
+                'Pause print', 'Keep printing')
+    : await ask('Stop ' + name + '?', "The job is cancelled and can't be resumed.",
+                'Stop print', c.state === 'paused' ? 'Keep job' : 'Keep printing');
+  // The printer may have finished or changed state while the question was open.
+  if (ok && cards.get(name) === c && allowed()) send(name, action);
+}
+
+async function send(name, action) {
+  const c = cards.get(name);
+  if (!c || c.el.classList.contains('sending')) return;
+  const state = c.state;
   c.el.classList.add('sending');
   errors.delete(name);
   render(lastPrinters);
   try {
-    const r = await fetch('api/printers/' + encodeURIComponent(name) +
-      (state === 'paused' ? '/resume' : '/set-ready'),
+    const r = await fetch('api/printers/' + encodeURIComponent(name) + '/' + action,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     if (!r.ok) throw new Error(explain(r.status, await r.text()));
-    if (state === 'plate') pending.set(name, Date.now() + 15000);
+    if (action === 'set-ready') pending.set(name, Date.now() + 15000);
   } catch (e) {
     errors.set(name, { state, text: e instanceof TypeError ? "Can't reach the SetReady server." : e.message });
   }
