@@ -1,7 +1,7 @@
 FROM python:3.13-alpine
 
 WORKDIR /app
-COPY server.py index.html ./
+COPY server.py index.html LICENSE ./
 
 # Settings saved from the page go to /config/config.json: mount a folder there to keep them.
 ENV HOST=0.0.0.0 \
