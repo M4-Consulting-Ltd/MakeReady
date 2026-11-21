@@ -17,6 +17,10 @@ For each printer it shows:
 Under the printers, a **Waiting jobs** list (optional) shows what each queued job needs
 and which printer could run it, or what would have to be loaded where.
 
+![The page showing six printers with camera pictures, loaded filament and buttons, above a list of waiting jobs](docs/screenshot.png)
+
+*Mock-up with sample data.*
+
 It is one small Python server and one HTML page, with no dependencies. Not affiliated
 with or endorsed by Watchtower.
 
