@@ -49,6 +49,9 @@
   button { font: inherit; font-weight: 600; min-height: 56px; border-radius: 10px;
            border: 2px solid var(--c); background: transparent; color: var(--c);
            cursor: default; opacity: .65; }
+  .paused button { cursor: pointer; opacity: 1; }
+  .paused.armed button { background: var(--red); color: #fff; }
+  .paused button:hover { filter: brightness(1.1); }
   .plate button { background: var(--red); color: #fff; cursor: pointer; opacity: 1; }
   .plate button:hover { filter: brightness(1.1); }
   .plate button:active { transform: translateY(1px); }
@@ -136,7 +139,7 @@ const LABEL = {
   ready:    ['Ready for the next job',  'Ready'],
   plate:    ['Plate needs clearing',    'Plate cleared – Set Ready'],
   printing: ['Printing',                'Printing'],
-  paused:   ['Paused or error',         'Paused / error'],
+  paused:   ['Paused or error',         'Resume print'],
   offline:  ['Offline',                 'Offline'],
 };
 
@@ -199,7 +202,7 @@ function explain(status, text) {
   if (status === 401) return 'Watchtower rejected the API key.';
   if (status === 403) return /FEATURE_NOT_LICENSED/.test(text)
     ? "Your Watchtower plan doesn't include API access."
-    : 'The API key is not allowed to do this. It needs the control scope with set_ready.';
+    : 'The API key is not allowed to do this. It needs the control scope with set_ready and resume.';
   if (status === 404) return 'Not found. Check that the base URL ends in /api/public/v1.';
   if (status === 429) return 'Watchtower is rate-limiting requests. Trying again shortly.';
   return detail || 'Watchtower returned HTTP ' + status + '.';
@@ -221,7 +224,8 @@ function render(printers) {
       if (state === 'plate' && Date.now() < pending.get(p.name)) state = 'ready';
       else pending.delete(p.name);
     }
-    if (state !== 'plate') errors.delete(p.name);
+    if (errors.has(p.name) && errors.get(p.name).state !== state) errors.delete(p.name);
+    const armed = state === 'paused' && Date.now() < (confirmUntil.get(p.name) || 0);
     counts[state]++;
 
     let c = cards.get(p.name);
@@ -233,7 +237,7 @@ function render(printers) {
         '<button type="button"></button><div class="msg" role="status"></div>';
       el.querySelector('.name').textContent = p.name;
       el.querySelector('.cam').alt = 'Camera: ' + p.name;
-      el.querySelector('button').addEventListener('click', () => setReady(p.name));
+      el.querySelector('button').addEventListener('click', () => press(p.name));
       c = { el, state: null };
       cards.set(p.name, c);
     }
@@ -249,10 +253,12 @@ function render(printers) {
     c.el.querySelector('.eta').textContent =
       state === 'printing' ? etaText(p, true) : state === 'paused' ? etaText(p, false) : '';
     const btn = c.el.querySelector('button');
-    btn.textContent = sending ? 'Sending…' : LABEL[state][1];
-    btn.setAttribute('aria-disabled', state !== 'plate' || sending);
-    btn.setAttribute('aria-label', p.name + ': ' + LABEL[state][1]);
-    c.el.querySelector('.msg').textContent = errors.get(p.name) || '';
+    const text = armed ? 'Tap again to resume' : LABEL[state][1];
+    c.el.classList.toggle('armed', armed);
+    btn.textContent = sending ? 'Sending…' : text;
+    btn.setAttribute('aria-disabled', !(state === 'plate' || state === 'paused') || sending);
+    btn.setAttribute('aria-label', p.name + ': ' + text);
+    c.el.querySelector('.msg').textContent = errors.has(p.name) ? errors.get(p.name).text : '';
   }
   for (const [name, c] of cards) if (!seen.has(name)) { c.el.remove(); cards.delete(name); }
 
@@ -290,19 +296,37 @@ async function refresh() {
   if (!document.hidden) timer = setTimeout(refresh, delay);
 }
 
-async function setReady(name) {
+// Button press. A waiting plate sends set_ready at once. A paused printer sends resume, but
+// only on a second tap within a few seconds: resuming moves the machine, so a stray touch
+// on a wall tablet must not do it.
+const CONFIRM_MS = 4000;
+const confirmUntil = new Map();   // printer name -> time until which a second tap resumes
+
+async function press(name) {
   const c = cards.get(name);
-  if (!c || c.state !== 'plate' || c.el.classList.contains('sending')) return;
+  if (!c || c.el.classList.contains('sending')) return;
+  const state = c.state;
+  if (state !== 'plate' && state !== 'paused') return;
+  if (state === 'paused') {
+    if (Date.now() >= (confirmUntil.get(name) || 0)) {
+      confirmUntil.set(name, Date.now() + CONFIRM_MS);
+      render(lastPrinters);
+      setTimeout(() => render(lastPrinters), CONFIRM_MS + 50);   // drop the prompt again
+      return;
+    }
+    confirmUntil.delete(name);
+  }
   c.el.classList.add('sending');
   errors.delete(name);
   render(lastPrinters);
   try {
-    const r = await fetch('api/printers/' + encodeURIComponent(name) + '/set-ready',
+    const r = await fetch('api/printers/' + encodeURIComponent(name) +
+      (state === 'paused' ? '/resume' : '/set-ready'),
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     if (!r.ok) throw new Error(explain(r.status, await r.text()));
-    pending.set(name, Date.now() + 15000);
+    if (state === 'plate') pending.set(name, Date.now() + 15000);
   } catch (e) {
-    errors.set(name, e instanceof TypeError ? "Can't reach the SetReady server." : e.message);
+    errors.set(name, { state, text: e instanceof TypeError ? "Can't reach the SetReady server." : e.message });
   }
   c.el.classList.remove('sending');
   render(lastPrinters);

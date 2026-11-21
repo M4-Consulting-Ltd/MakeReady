@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Watchtower SetReady: virtual "Set Ready" buttons for a Watchtower printer farm.
 
-Serves index.html and forwards exactly two calls to Watchtower's public API, so the
+Serves index.html and forwards a short fixed list of calls to Watchtower's public API, so the
 API key stays on this machine and the browser has no CORS or certificate problems:
 
     GET  /api/printers                   -> GET  {base}/printers
     POST /api/printers/{name}/set-ready  -> POST {base}/printers/{name}/commands
                                             {"command": "set_ready"}
+    POST /api/printers/{name}/resume     -> the same call with {"command": "resume"}
 
 The API calls are the same ones the ClearCue hardware button makes
 (https://github.com/ThePrintBench/ClearCue).
@@ -311,6 +312,10 @@ def upstream(method, path, body=None):
                                          % (BASE, reason, hint)}).encode(), None
 
 
+# The only printer commands the page can send: URL suffix -> Watchtower command.
+COMMANDS = {"set-ready": "set_ready", "resume": "resume"}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "WatchtowerSetReady/1.0"
 
@@ -372,12 +377,12 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send(200, json.dumps(public_config()).encode())
             return
-        # /api/printers/{name}/set-ready ; {name} arrives URL-encoded and is passed on as-is
+        # /api/printers/{name}/set-ready or /resume ; {name} arrives URL-encoded
         if len(parts) == 5 and parts[:3] == ["", "api", "printers"] and parts[3] \
-                and parts[4] == "set-ready":
+                and parts[4] in COMMANDS:
             name = urllib.parse.quote(urllib.parse.unquote(parts[3]), safe="")
             status, body, ra = upstream("POST", "/printers/%s/commands" % name,
-                                        {"command": "set_ready"})
+                                        {"command": COMMANDS[parts[4]]})
             self.send(status, body or b"{}", retry_after=ra)
         else:
             self.send(404, b'{"error":"Not found"}')
