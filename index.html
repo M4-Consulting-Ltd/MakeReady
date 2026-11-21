@@ -47,6 +47,21 @@
   .plate button:active { transform: translateY(1px); }
   button:focus-visible { outline: 3px solid var(--text); outline-offset: 2px; }
   .card.sending button { opacity: .6; cursor: progress; }
+  button.plain { min-height: 36px; padding: 0 14px; border: 1px solid var(--line);
+                 color: var(--text); opacity: 1; cursor: pointer; font-weight: 500; font-size: 14px; }
+  button.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+  dialog { width: min(440px, calc(100vw - 32px)); border: 1px solid var(--line);
+           border-radius: 12px; background: var(--card); color: var(--text); padding: 20px; }
+  dialog::backdrop { background: rgba(0, 0, 0, .5); }
+  dialog h2 { font-size: 18px; margin: 0 0 14px; }
+  dialog label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+  dialog input:not([type=checkbox]) { display: block; width: 100%; margin-top: 4px; padding: 9px 10px;
+           font: inherit; color: var(--text); background: var(--bg);
+           border: 1px solid var(--line); border-radius: 8px; }
+  dialog small { display: block; font-weight: 400; color: var(--muted); margin-top: 4px; }
+  dialog .check { display: flex; gap: 10px; align-items: flex-start; }
+  dialog .check input { margin-top: 3px; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .msg { font-size: 13px; color: var(--red); min-height: 18px; }
 </style>
 </head>
@@ -55,7 +70,33 @@
   <h1>Watchtower SetReady</h1>
   <span id="summary"></span>
   <span id="updated"></span>
+  <button type="button" id="open-settings" class="plain">Settings</button>
 </header>
+<dialog id="settings">
+  <form id="settings-form">
+    <h2>Watchtower connection</h2>
+    <label>Watchtower address
+      <input id="cfg-url" required autocomplete="off" spellcheck="false"
+             placeholder="192.168.1.50 or https://192.168.1.50:8443">
+      <small>IP address or name of the Watchtower computer. Add <code>http://</code> or a
+        port if yours needs one; <code>https://</code> is assumed otherwise.</small>
+    </label>
+    <label>API key
+      <input id="cfg-key" type="password" autocomplete="off" placeholder="wt_…">
+      <small id="cfg-key-hint"></small>
+    </label>
+    <label class="check"><input id="cfg-insecure" type="checkbox">
+      <span>Skip the certificate check
+        <small>Needed for https unless Watchtower's CA certificate file is set on the
+          server. The connection is still encrypted, but not verified.</small></span>
+    </label>
+    <div id="cfg-error" class="msg" role="alert"></div>
+    <div class="actions">
+      <button type="button" id="cfg-cancel" class="plain">Cancel</button>
+      <button type="submit" class="plain primary">Save</button>
+    </div>
+  </form>
+</dialog>
 <div id="banner" role="alert"></div>
 <main id="grid"><p class="empty">Loading printers…</p></main>
 
@@ -173,6 +214,7 @@ async function refresh() {
   try {
     const r = await fetch('api/printers', { cache: 'no-store' });
     const text = await r.text();
+    if (r.status === 503 && !askedSetup) { askedSetup = true; openSettings(); }
     if (!r.ok) {
       if (r.status === 429) delay = (parseInt(r.headers.get('Retry-After')) || 30) * 1000;
       throw new Error(explain(r.status, text));
@@ -209,6 +251,56 @@ async function setReady(name) {
   clearTimeout(timer);
   timer = setTimeout(refresh, 1500);      // give Watchtower a beat, then confirm
 }
+
+// ---- Settings: Watchtower address + API key, saved by the server ----
+const dlg = document.getElementById('settings');
+const $ = id => document.getElementById(id);
+let askedSetup = false, savedUrl = '', hasKey = false;
+
+function keyHint() {
+  const reuse = hasKey && $('cfg-url').value.trim() === savedUrl;
+  $('cfg-key').required = !reuse;
+  $('cfg-key-hint').textContent = reuse
+    ? 'A key is saved. Leave blank to keep it.'
+    : hasKey ? 'Re-enter the key when changing the address.'
+             : 'From Watchtower; needs the control scope with set_ready.';
+}
+
+async function openSettings() {
+  if (dlg.open) return;
+  $('cfg-error').textContent = '';
+  $('cfg-key').value = '';
+  try {
+    const c = await (await fetch('api/config', { cache: 'no-store' })).json();
+    savedUrl = c.url; hasKey = c.hasKey;
+    $('cfg-url').value = c.url;
+    $('cfg-insecure').checked = c.insecure;
+  } catch { /* server unreachable: the form still opens, saving will report it */ }
+  keyHint();
+  dlg.showModal();
+}
+
+$('open-settings').addEventListener('click', openSettings);
+$('cfg-cancel').addEventListener('click', () => dlg.close());
+$('cfg-url').addEventListener('input', keyHint);
+$('settings-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    const r = await fetch('api/config', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: $('cfg-url').value, apiKey: $('cfg-key').value,
+                             insecure: $('cfg-insecure').checked }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Could not save.');
+    dlg.close();
+    grid.innerHTML = '<p class="empty">Loading printers…</p>';
+    cards.clear(); pending.clear(); errors.clear(); lastPrinters = [];
+    document.getElementById('summary').textContent = '';
+    refresh();
+  } catch (err) {
+    $('cfg-error').textContent = err instanceof TypeError ? "Can't reach the SetReady server." : err.message;
+  }
+});
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 refresh();
