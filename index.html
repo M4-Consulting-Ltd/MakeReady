@@ -102,7 +102,18 @@
   .loaded { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px;
             color: var(--muted); }
   .sw { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--grey);
-        background: var(--sw, transparent); flex: none; display: inline-block; }
+        background: var(--sw, transparent); flex: none; display: inline-block;
+        position: relative; cursor: pointer; }
+  .sw::after { content: ""; position: absolute; inset: -7px; }      /* bigger tap target */
+  .chip { cursor: pointer; }
+  @media (pointer: coarse) { .loaded { gap: 10px; } .loaded .sw { width: 22px; height: 22px; } }
+  /* Details of a filament, shown on tap (phones) or hover (mouse) */
+  #tip { position: fixed; z-index: 10; max-width: min(280px, calc(100vw - 16px)); display: none;
+         padding: 8px 10px; border-radius: 8px; background: var(--text); color: var(--bg);
+         font-size: 13px; line-height: 1.45; box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+         pointer-events: none; }
+  #tip.show { display: block; }
+  #tip b { display: block; font-size: 14px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 5px;
           border: 1px solid var(--line); border-radius: 999px; font-size: 13px; white-space: nowrap; }
@@ -207,6 +218,7 @@
     <button type="button" id="confirm-ok" class="plain danger"></button>
   </div>
 </dialog>
+<div id="tip" role="tooltip"></div>
 <div id="banner" role="alert"></div>
 <div id="camnote"></div>
 <main id="grid"><p class="empty">Loading printers…</p></main>
@@ -614,7 +626,9 @@ function swatch(f) {
   const s = document.createElement('span');
   s.className = 'sw';
   if (f.color) s.style.setProperty('--sw', f.color);
-  s.title = filamentTitle(f);
+  s.dataset.tip = filamentTitle(f);
+  s.setAttribute('role', 'img');
+  s.setAttribute('aria-label', filamentTitle(f));
   return s;
 }
 // Colour is shown by the swatch, never as a hex code; the code stays in the tooltip.
@@ -627,10 +641,38 @@ function chipText(f) {
 function chip(f, missing) {
   const c = document.createElement('span');
   c.className = 'chip' + (missing ? ' missing' : '');
-  c.title = filamentTitle(f);
+  c.dataset.tip = filamentTitle(f);
   c.append(swatch(f), chipText(f));
   return c;
 }
+// Filament details pop-up. Phones have no hover, so a tap on a swatch or chip shows it and
+// a tap anywhere else (or scrolling) hides it; with a mouse it also follows the pointer.
+const tip = document.getElementById('tip');
+let tipFor = null;
+function showTip(target) {
+  const parts = target.dataset.tip.split(' · ');
+  tip.replaceChildren(el('b', '', parts[0]), ...parts.slice(1).map(t => el('div', '', t)));
+  tip.classList.add('show');
+  const r = target.getBoundingClientRect(), w = tip.offsetWidth, hgt = tip.offsetHeight;
+  const left = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 8));
+  const above = r.top - hgt - 8;
+  tip.style.left = left + 'px';
+  tip.style.top = (above >= 8 ? above : r.bottom + 8) + 'px';
+  tipFor = target;
+}
+function hideTip() { tip.classList.remove('show'); tipFor = null; }
+document.addEventListener('click', e => {
+  const target = e.target.closest ? e.target.closest('[data-tip]') : null;
+  if (target && target !== tipFor) showTip(target); else hideTip();
+});
+document.addEventListener('pointerover', e => {
+  if (e.pointerType !== 'mouse') return;
+  const target = e.target.closest ? e.target.closest('[data-tip]') : null;
+  if (target) showTip(target); else if (tipFor) hideTip();
+});
+window.addEventListener('scroll', hideTip, { passive: true });
+window.addEventListener('resize', hideTip);
+
 function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -776,6 +818,7 @@ function renderQueue(q) {
     row.append(left, right);
     list.append(row);
   }
+  if (tipFor && !tipFor.isConnected) hideTip();     // its swatch was just redrawn
   layout();
 }
 
