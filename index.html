@@ -501,6 +501,17 @@ async function press(name) {
     }
     confirmUntil.delete(name);
   }
+  if (state === 'plate') {
+    // Warn, but let the person carry on, when the job this printer would pick up needs
+    // more of a filament than is left on the spool.
+    const job = pickupJob(name), low = job ? shortages(job, name) : [];
+    if (low.length) {
+      const ok = await ask('Not enough filament on ' + name + '?',
+        job.name + ' may run out part-way. ' + low.join('; ') + '.',
+        'Set Ready anyway', 'Cancel');
+      if (!ok || cards.get(name) !== c || c.state !== 'plate') return;
+    }
+  }
   send(name, state === 'paused' ? 'resume' : 'set-ready');
 }
 
@@ -597,7 +608,7 @@ function filamentLabel(f) {
 }
 function filamentTitle(f) {
   return [filamentLabel(f), f.name, f.color, f.grams != null ? Math.round(f.grams) + ' g' : '',
-          f.pct != null ? Math.round(f.pct) + '% left' : '', f.slot].filter(Boolean).join(' · ');
+          f.left != null ? 'about ' + f.left + 'g left' : '', f.slot].filter(Boolean).join(' · ');
 }
 function swatch(f) {
   const s = document.createElement('span');
@@ -641,6 +652,23 @@ const jobOk = j => !j.best && (j.printer || j.ready.length);   // a printer has 
 //  - Idle printer (plate waiting, or ready): the advice is about this printer. Either a
 //    waiting job can run on it as it is, or we show the least it would take to run one.
 //  - Busy printer: only flagged when it is the closest fit for a job no printer can run.
+// The waiting job an idle printer would take: the oldest one its loaded filament covers.
+function pickupJob(name) {
+  const q = lastQueue;
+  return ((q && q.jobs) || [])
+    .filter(j => j.missing_by && j.missing_by[name] && !j.missing_by[name].length &&
+                 (!j.printer || j.printer === name))
+    .sort((a, b) => (a.created || '').localeCompare(b.created || '') || a.order - b.order)[0];
+}
+// Filaments the printer has, but less of than the job uses: ["Red PLA Basic: needs 156g, about 100g left"]
+function shortages(j, name) {
+  return ((j.short_by || {})[name] || []).map(s => {
+    const f = j.filaments[s.i];
+    return (f.name ? f.name + ' ' : '') + filamentLabel(f) + ': needs ' + Math.round(f.grams) +
+           'g, about ' + s.have + 'g left';
+  });
+}
+
 function renderCardFilament(name, c) {
   const q = lastQueue;
   const loaded = c.el.querySelector('.loaded'), needs = c.el.querySelector('.needs');
@@ -668,6 +696,9 @@ function renderCardFilament(name, c) {
       needs.append(el('b', 'good', head),
                    el('div', '', runnable[0].name +
                       (runnable.length > 1 ? ' (and ' + (runnable.length - 1) + ' more)' : '')));
+      const low = shortages(runnable[0], name);
+      if (low.length) needs.append(el('b', '', 'Not enough filament loaded'),
+                                   el('div', '', low.join('; ')));
     } else {
       // Closest match first (fewest filaments to load); among equals, the oldest job.
       const j = mine.reduce((a, b) => b.missing_by[name].length < a.missing_by[name].length ? b : a);
