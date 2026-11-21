@@ -17,6 +17,10 @@ For each printer it shows:
 Under the printers, a **Waiting jobs** list (optional) shows what each queued job needs
 and which printer could run it, or what would have to be loaded where.
 
+![The page showing six printers with camera pictures, loaded filament and buttons, above a list of waiting jobs](docs/screenshot.png)
+
+*Mock-up with sample data.*
+
 It is one small Python server and one HTML page, with no dependencies. Not affiliated
 with or endorsed by Watchtower.
 
@@ -137,9 +141,14 @@ has several; printers with no online camera show no picture.
 With the Watchtower login set:
 
 - **On each card:** a row of colour swatches for the filament loaded in its slots. Hover
-  or long-press a swatch for the name, type, percentage left and slot. When a waiting
-  job can't run anywhere and this printer is the closest fit, a red **Load for waiting
-  jobs** list shows what it is missing.
+  or long-press a swatch for the name, type, percentage left and slot. Below it, advice
+  about the queue:
+  - *Idle printer* (plate waiting, or ready): either **Set Ready can pick up a waiting
+    job**, naming the oldest job its loaded filament can run, or **No waiting job can
+    run here yet**, with the job that is the closest match (fewest filaments to load;
+    the oldest job wins a tie) and exactly what to load for it.
+  - *Busy printer:* a red **Load for waiting jobs** list, only when a job can't run
+    anywhere and this printer is the closest fit.
 - **Under the cards:** the **Waiting jobs** list. Each job shows the filaments it needs
   and the weight of each, e.g. "Gold PLA Basic (15g)", with missing ones outlined in
   red, and a verdict:

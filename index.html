@@ -107,6 +107,7 @@
   .chip.missing { border-color: var(--red); border-style: dashed; }
   .needs { font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
   .needs b { font-weight: 600; color: var(--red); }
+  .needs b.good { color: var(--green); }
   .loaded:empty, .needs:empty { display: none; }
   #queue { max-width: var(--page); margin: 0 auto; padding: 0 16px 32px; }
   .qhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
@@ -396,6 +397,7 @@ function render(printers) {
     btn.setAttribute('aria-disabled', !(state === 'plate' || state === 'paused') || sending);
     btn.setAttribute('aria-label', p.name + ': ' + text);
     c.el.querySelector('.msg').textContent = errors.has(p.name) ? errors.get(p.name).text : '';
+    if (c.filState !== state) { c.filState = state; renderCardFilament(p.name, c); }   // advice depends on state
   }
   for (const [name, c] of cards) if (!seen.has(name)) { c.el.remove(); cards.delete(name); }
   layout();
@@ -633,26 +635,58 @@ hideOk.addEventListener('change', () => {
 });
 const jobOk = j => !j.best && (j.printer || j.ready.length);   // a printer has every filament
 
+// Filament lines on one printer card: what is loaded, then advice.
+//  - Idle printer (plate waiting, or ready): the advice is about this printer. Either a
+//    waiting job can run on it as it is, or we show the least it would take to run one.
+//  - Busy printer: only flagged when it is the closest fit for a job no printer can run.
+function renderCardFilament(name, c) {
+  const q = lastQueue;
+  const loaded = c.el.querySelector('.loaded'), needs = c.el.querySelector('.needs');
+  loaded.replaceChildren();
+  needs.replaceChildren();
+  if (!q) return;
+  const slots = (q.loaded || {})[name];
+  if (slots && slots.length) {
+    loaded.append('Loaded');
+    loaded.append(...slots.map(swatch));
+    loaded.setAttribute('aria-label', 'Loaded: ' + slots.map(filamentTitle).join('; '));
+  }
+  if (c.state === 'plate' || c.state === 'ready') {
+    // Jobs this printer could take: unassigned ones for its model, or ones assigned to it.
+    const mine = (q.jobs || []).filter(j => j.missing_by && j.missing_by[name] &&
+                                            (!j.printer || j.printer === name))
+                               // oldest first: longest-waiting job wins a tie
+                               .sort((a, b) => (a.created || '').localeCompare(b.created || '') ||
+                                               a.order - b.order);
+    if (!mine.length) return;
+    const runnable = mine.filter(j => !j.missing_by[name].length);
+    if (runnable.length) {
+      const head = c.state === 'plate' ? 'Set Ready can pick up a waiting job'
+                                       : 'Has the filament for a waiting job';
+      needs.append(el('b', 'good', head),
+                   el('div', '', runnable[0].name +
+                      (runnable.length > 1 ? ' (and ' + (runnable.length - 1) + ' more)' : '')));
+    } else {
+      // Closest match first (fewest filaments to load); among equals, the oldest job.
+      const j = mine.reduce((a, b) => b.missing_by[name].length < a.missing_by[name].length ? b : a);
+      const chips = el('div', 'chips');
+      chips.append(...j.missing_by[name].map(i => chip(j.filaments[i], true)));
+      needs.append(el('b', '', 'No waiting job can run here yet'),
+                   el('div', '', 'To run ' + j.name + ', load:'), chips);
+    }
+    return;
+  }
+  const want = (q.needs || {})[name];
+  if (want && want.length) {
+    const chips = el('div', 'chips');
+    chips.append(...want.map(f => chip(f, true)));
+    needs.append(el('b', '', 'Load for waiting jobs'), chips);
+  }
+}
+
 function renderQueue(q) {
   lastQueue = q;
-  // Printer cards: loaded filament, and what to load for a job that can't run anywhere yet.
-  for (const [name, c] of cards) {
-    const loaded = c.el.querySelector('.loaded'), needs = c.el.querySelector('.needs');
-    loaded.replaceChildren();
-    needs.replaceChildren();
-    const slots = (q.loaded || {})[name];
-    if (slots && slots.length) {
-      loaded.append('Loaded');
-      loaded.append(...slots.map(swatch));
-      loaded.setAttribute('aria-label', 'Loaded: ' + slots.map(filamentTitle).join('; '));
-    }
-    const want = (q.needs || {})[name];
-    if (want && want.length) {
-      const chips = el('div', 'chips');
-      chips.append(...want.map(f => chip(f, true)));
-      needs.append(el('b', '', 'Load for waiting jobs'), chips);
-    }
-  }
+  for (const [name, c] of cards) renderCardFilament(name, c);
 
   const section = document.getElementById('queue'), list = document.getElementById('queue-list');
   const jobs = (q.jobs || []).filter(j => !(hideOk.checked && jobOk(j)));
