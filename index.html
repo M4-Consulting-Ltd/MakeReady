@@ -107,6 +107,15 @@
   .sw::after { content: ""; position: absolute; inset: -7px; }      /* bigger tap target */
   .chip { cursor: pointer; }
   @media (pointer: coarse) { .loaded { gap: 10px; } .loaded .sw { width: 22px; height: 22px; } }
+  .card button.reload { min-height: 0; width: 28px; height: 28px; padding: 0; margin-left: auto;
+                        display: grid; place-items: center; flex: none; border-radius: 50%;
+                        background: transparent; border: 1px solid var(--line); color: var(--muted);
+                        opacity: 1; cursor: pointer; filter: none; transform: none; }
+  .card button.reload:hover { color: var(--text); border-color: var(--text); }
+  .card button.reload svg { width: 16px; height: 16px; }
+  .card button.reload.busy svg { animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (pointer: coarse) { .card button.reload { width: 36px; height: 36px; } }
   /* Details of a filament, shown on tap (phones) or hover (mouse) */
   #tip { position: fixed; z-index: 10; max-width: min(280px, calc(100vw - 16px)); display: none;
          padding: 8px 10px; border-radius: 8px; background: var(--text); color: var(--bg);
@@ -718,10 +727,25 @@ function renderCardFilament(name, c) {
   needs.replaceChildren();
   if (!q) return;
   const slots = (q.loaded || {})[name];
-  if (slots && slots.length) {
+  if (slots) {
     loaded.append('Loaded');
-    loaded.append(...slots.map(swatch));
-    loaded.setAttribute('aria-label', 'Loaded: ' + slots.map(filamentTitle).join('; '));
+    if (slots.length) loaded.append(...slots.map(swatch)); else loaded.append(' nothing');
+    loaded.setAttribute('aria-label', 'Loaded: ' + (slots.map(filamentTitle).join('; ') || 'nothing'));
+    // Not printing: someone may be swapping spools, so offer to re-read what is loaded
+    // straight away instead of waiting for the next automatic refresh.
+    if (c.state !== 'printing' && c.state !== 'paused') {
+      const btn = el('button', 'reload');
+      btn.type = 'button';
+      btn.setAttribute('aria-label', 'Refresh loaded filament for ' + name);
+      btn.title = 'Refresh loaded filament';
+      btn.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9" ' +
+        'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' +
+        '<path d="M14.6 2.6v4h-4" fill="none" stroke="currentColor" stroke-width="2" ' +
+        'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      btn.classList.toggle('busy', reloading);
+      btn.addEventListener('click', reloadFilament);
+      loaded.append(btn);
+    }
   }
   if (c.state === 'plate' || c.state === 'ready') {
     // Jobs this printer could take: unassigned ones for its model, or ones assigned to it.
@@ -822,14 +846,29 @@ function renderQueue(q) {
   layout();
 }
 
-async function refreshQueue() {
-  if (queueBusy || Date.now() - queueAt < 15000) return;
+async function refreshQueue(fresh) {
+  if (queueBusy || (!fresh && Date.now() - queueAt < 15000)) return;
   queueBusy = true;
   try {
-    renderQueue(await (await fetch('api/queue', { cache: 'no-store' })).json());
+    renderQueue(await (await fetch('api/queue' + (fresh ? '?fresh=1' : ''), { cache: 'no-store' })).json());
     queueAt = Date.now();
   } catch { /* keep the last view; the printer poll reports a dead server */ }
   queueBusy = false;
+}
+
+// The refresh button beside "Loaded": ask Watchtower again now for what is loaded and the
+// queue. It reads what Watchtower currently knows; it does not make the printer re-scan.
+let reloading = false;
+async function reloadFilament() {
+  if (reloading) return;
+  reloading = true;
+  for (const b of document.querySelectorAll('.reload')) b.classList.add('busy');
+  const started = Date.now();
+  while (queueBusy) await new Promise(r => setTimeout(r, 100));     // let a running fetch finish
+  await refreshQueue(true);
+  await new Promise(r => setTimeout(r, Math.max(0, 500 - (Date.now() - started))));  // visible spin
+  reloading = false;
+  for (const b of document.querySelectorAll('.reload')) b.classList.remove('busy');
 }
 
 // ---- Settings: Watchtower address + API key, saved by the server ----
