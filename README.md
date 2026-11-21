@@ -12,19 +12,32 @@ Needs Python 3.8+ and nothing else.
 
 1. In Watchtower, create an API key (starts with `wt_`) with the `control` scope and
    `set_ready`.
-2. Copy `config.example.json` to `config.json` and fill in:
-   - `WATCHTOWER_URL`: your Watchtower API base URL, ending in `/api/public/v1`
-   - `WATCHTOWER_API_KEY`: the key from step 1
-   - `WATCHTOWER_CA`: if the URL is `https://`, the path to Watchtower's CA certificate
-     (PEM). Watchtower signs its certificate with its own local CA, so Python won't
-     trust it otherwise. (`"WATCHTOWER_INSECURE": "1"` skips the check instead.)
-   - `HOST`: leave `127.0.0.1` to use the page only on this computer; set `0.0.0.0` to
-     reach it from phones and tablets on the network.
-3. Run `python3 server.py` and open `http://<this-computer>:8080`.
+2. Run `python3 server.py` and open `http://localhost:8080`.
+3. The **Settings** dialog opens on first use. Enter:
+   - **Watchtower address**: the IP address or name of the Watchtower computer, e.g.
+     `192.168.1.50`. `https://` and `/api/public/v1` are added for you; type
+     `http://…` or a `:port` if yours needs one.
+   - **API key**: the key from step 1.
+   - **Skip the certificate check**: tick this for `https://` unless you have set
+     `WATCHTOWER_CA` (below). Watchtower signs its certificate with its own local CA,
+     which Python doesn't trust by default.
 
-Every setting can also be given as an environment variable of the same name.
+The **Settings** button in the page header changes these later. They are saved in
+`config.json` next to `server.py`. The API key is never shown again, and has to be
+re-entered whenever the address changes.
 
-**Anyone who can open the page can press the buttons.** There is no login; with
+Other options go in `config.json` (see `config.example.json`) or environment variables
+of the same name:
+
+- `HOST`: `127.0.0.1` (default) serves the page only on this computer; `0.0.0.0` makes
+  it reachable from phones and tablets on the network.
+- `PORT`: default `8080`.
+- `WATCHTOWER_CA`: path to Watchtower's CA certificate (PEM), to verify `https://`
+  properly instead of skipping the check.
+- `WATCHTOWER_URL`, `WATCHTOWER_API_KEY`: the same values as the Settings dialog.
+
+**Anyone who can open the page can press the buttons and change the settings.** There
+is no login; with
 `HOST` set to `0.0.0.0`, keep it on a network you trust.
 
 ## Using it
