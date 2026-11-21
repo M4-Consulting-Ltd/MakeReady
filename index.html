@@ -115,6 +115,7 @@
          padding: 12px 14px; margin-bottom: 8px; display: grid; gap: 8px;
          grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); align-items: start; }
   .job.blocked { border-left: 4px solid var(--red); }
+  .job.ok { border-left: 4px solid var(--green); }      /* a printer has every filament */
   .job .jname { font-weight: 600; overflow-wrap: anywhere; }
   .job .jmeta { color: var(--muted); font-size: 13px; }
   .job .verdict { font-size: 14px; margin-top: 6px; }
@@ -576,7 +577,8 @@ function renderQueue(q) {
   if (q.error) list.append(el('p', 'jmeta', q.error));
   for (const j of jobs) {
     const blocked = !!j.best && !j.printer;
-    const row = el('div', 'job' + (blocked || (j.best && j.printer) ? ' blocked' : ''));
+    const ok = !j.best && (j.printer || j.ready.length);   // a printer has every filament
+    const row = el('div', 'job' + (j.best ? ' blocked' : ok ? ' ok' : ''));
     const left = el('div'), right = el('div');
     left.append(el('div', 'jname', j.name));
     const meta = [];
