@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>watchtower-setready</Name>
+  <Repository>ghcr.io/m4-consulting-ltd/watchtower-setready:latest</Repository>
+  <Registry>https://github.com/M4-Consulting-Ltd/Watchtower-SetReady/pkgs/container/watchtower-setready</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/M4-Consulting-Ltd/Watchtower-SetReady/issues</Support>
+  <Project>https://github.com/M4-Consulting-Ltd/Watchtower-SetReady</Project>
+  <Overview>Virtual Set Ready buttons for a Watchtower 3D-printer farm. One page lists every printer with its state, time left and camera snapshot, and a button to mark the plate cleared or resume a paused print. Open the WebUI and use Settings to enter the Watchtower address and API key. There is no login on the page: anyone on your network who can open it can press the buttons.</Overview>
+  <Category>Tools: Productivity:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/M4-Consulting-Ltd/Watchtower-SetReady/main/unraid/watchtower-setready.xml</TemplateURL>
+  <Config Name="WebUI port" Target="8080" Default="8090" Mode="tcp" Description="Port the page is served on." Type="Port" Display="always" Required="true" Mask="false">8090</Config>
+  <Config Name="Settings folder" Target="/config" Default="/mnt/user/appdata/watchtower-setready" Mode="rw" Description="Holds config.json: the Watchtower address, API key and camera login saved from the page." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/watchtower-setready</Config>
+  <Config Name="Watchtower CA certificate" Target="WATCHTOWER_CA" Default="" Mode="" Description="Optional. Path inside the container to Watchtower's CA certificate (PEM), e.g. /config/watchtower-ca.pem, to verify https properly instead of ticking 'Skip the certificate check'." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>

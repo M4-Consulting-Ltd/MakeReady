@@ -10,8 +10,8 @@ building any: open the page on a phone, tablet or wall-mounted screen in the far
 
 Needs Python 3.8+ and nothing else.
 
-1. In Watchtower, create an API key (starts with `wt_`) with the `control` scope and
-   `set_ready`.
+1. In Watchtower, create an API key (starts with `wt_`) with the `control` scope,
+   allowed to send `set_ready` and (for the Resume button) `resume`.
 2. Run `python3 server.py` and open `http://localhost:8080`.
 3. The **Settings** dialog opens on first use. Enter:
    - **Watchtower address**: the IP address or name of the Watchtower computer, e.g.
@@ -57,6 +57,38 @@ of the same name:
 is no login; with
 `HOST` set to `0.0.0.0`, keep it on a network you trust.
 
+## Docker and Unraid
+
+The image listens on port 8080 and keeps `config.json` in `/config`.
+
+```bash
+docker run -d --name watchtower-setready --restart unless-stopped \
+  -p 8090:8080 -v /path/to/settings:/config \
+  ghcr.io/m4-consulting-ltd/watchtower-setready:latest
+```
+
+The image is built and pushed to GitHub's container registry by
+`.github/workflows/docker.yml` on every push to `main`. To build it yourself instead:
+`docker build -t watchtower-setready .` in this folder.
+
+### Unraid
+
+1. Copy `unraid/watchtower-setready.xml` to the flash drive as
+   `/boot/config/plugins/dockerMan/templates-user/my-watchtower-setready.xml`
+   (over the network that is the `flash` share, folder
+   `config/plugins/dockerMan/templates-user`).
+2. In Unraid: **Docker → Add Container → Template → watchtower-setready**, check the
+   port (default 8090) and settings folder (default
+   `/mnt/user/appdata/watchtower-setready`), then **Apply**.
+3. Open the container's **WebUI** and fill in Settings.
+
+To update: **Docker → Check for Updates**, then update the container.
+
+If the image is private (GitHub makes it private when the repository is), Unraid
+can't pull it until you either make the package public (GitHub → the package →
+Package settings → Change visibility) or log in on Unraid with
+`docker login ghcr.io` using a GitHub token that has `read:packages`.
+
 ## Using it
 
 | Card | Meaning | Button |
@@ -64,7 +96,7 @@ is no login; with
 | Green | Ready for the next job | Nothing to do |
 | Solid red, filled button | Plate waiting to be cleared | **Press once the plate is clear** |
 | Red, slow pulse | Printing, with progress, time left and finish time when Watchtower reports them | Disabled |
-| Red, fast blink | Paused or error | Disabled |
+| Red, fast blink | Paused or error | **Resume print**: tap, then tap again within 4 seconds to confirm |
 | Amber | Watchtower reports the printer offline | Disabled |
 
 The page refreshes every 5 seconds. The browser tab title shows how many plates are
@@ -78,6 +110,7 @@ waiting, e.g. `(2) Watchtower SetReady`.
 |---|---|
 | `GET /api/printers` | `GET {base}/printers` |
 | `POST /api/printers/{name}/set-ready` | `POST {base}/printers/{name}/commands` with `{"command":"set_ready"}` |
+| `POST /api/printers/{name}/resume` | the same call with `{"command":"resume"}` |
 | `GET /api/cameras`, `GET /api/camera/{name}` | (camera login only) `GET /api/system/streams`, `GET /api/go2rtc/frame.jpeg?src=…` |
 
 The page talks to this small server rather than straight to Watchtower so the API key
