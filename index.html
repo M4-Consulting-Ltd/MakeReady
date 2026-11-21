@@ -14,34 +14,39 @@
     :root { --bg: #111317; --card: #1b1e24; --text: #eceef2; --muted: #9aa3b2; --line: #2c313a;
             --green: #35b765; --red: #ef5350; --amber: #f0a22e; --grey: #6b7484; }
   }
+  :root { --page: 1900px; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   /* Row 1: title + Settings. Row 2: counts + last update. Same on phone and desktop. */
   header { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 12px;
-           padding: 16px; max-width: 1200px; margin: 0 auto; }
+           padding: 16px; max-width: var(--page); margin: 0 auto; }
   h1 { font-size: 20px; margin: 0; }
   #open-settings { grid-row: 1; grid-column: 2; justify-self: end; }
   #summary { grid-row: 2; grid-column: 1; color: var(--muted); font-size: 14px; }
   #updated { grid-row: 2; grid-column: 2; color: var(--muted); font-size: 13px;
              text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  #banner { display: none; max-width: 1168px; margin: 0 auto 12px; padding: 10px 14px;
+  #banner { display: none; max-width: calc(var(--page) - 32px); margin: 0 auto 12px; padding: 10px 14px;
             border-radius: 8px; background: var(--red); color: #fff; font-size: 14px; }
   #banner.show { display: block; }
-  main { display: grid; gap: 12px; padding: 0 16px 24px; max-width: 1200px; margin: 0 auto;
-         grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+  /* Columns are set by layout() from the screen width and the number of printers, so rows
+     come out even (6 printers: 6x1, 3x2, 2x3 or 1x6) instead of leaving one on its own. */
+  main { display: grid; gap: 12px; padding: 0 16px 24px; max-width: var(--page); margin: 0 auto;
+         grid-template-columns: repeat(var(--cols, 1), minmax(0, var(--cardw, 680px)));
+         justify-content: center; }
   .empty { grid-column: 1 / -1; color: var(--muted); padding: 32px 0; text-align: center; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
           padding: 14px; display: flex; flex-direction: column; gap: 10px; }
   .cam { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px;
          background: #000; display: block; }
   .cam[hidden] { display: none; }
-  #camnote { max-width: 1168px; margin: -8px auto 10px; padding: 0 16px; font-size: 13px;
+  #camnote { max-width: var(--page); margin: -8px auto 10px; padding: 0 16px; font-size: 13px;
              color: var(--muted); }
   .name { font-weight: 600; overflow-wrap: anywhere; }
-  .model { color: var(--muted); font-size: 13px; min-height: 18px; }
+  .model { color: var(--muted); font-size: 13px; }
+  .model:empty, .eta:empty, .msg:empty { display: none; }
   .status { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-  .eta { font-size: 13px; color: var(--muted); min-height: 18px; margin-top: -6px;
+  .eta { font-size: 13px; color: var(--muted); margin-top: -6px;
          font-variant-numeric: tabular-nums; }
   .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); flex: none; }
   .printing .dot { animation: breathe 2.4s ease-in-out infinite; }
@@ -79,7 +84,7 @@
                     padding: 10px 12px 12px; }
   dialog legend { font-size: 14px; font-weight: 600; padding: 0 4px; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
-  .btns { display: flex; gap: 8px; }
+  .btns { display: flex; gap: 8px; margin-top: auto; }   /* buttons line up along the row */
   .btns .main { flex: 1; min-width: 0; }
   .card button.mini { flex: none; width: 52px; padding: 0; display: none; place-items: center;
                       background: transparent; color: var(--text); border: 2px solid var(--line);
@@ -90,7 +95,7 @@
   .card.sending button.mini { opacity: .4; cursor: progress; }
   button.danger { background: var(--red); color: #fff; border-color: var(--red); }
   #confirm p { margin: 0 0 16px; color: var(--muted); font-size: 15px; }
-  .msg { font-size: 13px; color: var(--red); min-height: 18px; }
+  .msg { font-size: 13px; color: var(--red); }
 </style>
 </head>
 <body>
@@ -165,6 +170,43 @@ const LABEL = {
   paused:   ['Paused or error',         'Resume print'],
   offline:  ['Offline',                 'Offline'],
 };
+
+// Pick the columns and card width from the screen size and the number of printers.
+// 1. If some arrangement shows every printer without scrolling, use the one with the
+//    biggest cards (a 1080p wall screen with 6 printers gets 3 x 2 large cards, not 6 x 1).
+// 2. Otherwise use as many columns as fit, evened out so no printer sits alone on a row.
+const CARD_MIN = 250, CARD_MAX = 680, GAP = 12, CAM_ASPECT = 9 / 16;
+function layout() {
+  const n = cards.size || 1;
+  const width = grid.clientWidth - 32;                       // minus side padding
+  const height = window.innerHeight - grid.offsetTop - 24;   // room below the header
+  const fit = Math.max(1, Math.floor((width + GAP) / (CARD_MIN + GAP)));
+  // Card height = camera picture (scales with width) + everything else (fixed).
+  let hasCam = false, chrome = 0;
+  for (const c of cards.values()) {
+    const cam = c.el.querySelector('.cam');
+    hasCam = hasCam || !cam.hidden;
+    chrome = Math.max(chrome, c.el.offsetHeight - (cam.hidden ? 0 : cam.offsetHeight));
+  }
+  chrome = chrome || 190;
+  let best = null;
+  for (let rows = 1; hasCam && rows <= n; rows++) {
+    const cols = Math.ceil(n / rows);
+    if (cols > fit) continue;
+    const byWidth = Math.min(CARD_MAX, (width - (cols - 1) * GAP) / cols);
+    const rowHeight = (height - (rows - 1) * GAP) / rows;
+    const byHeight = (rowHeight - chrome - 10) / CAM_ASPECT;      // 10: gap under the picture
+    const w = Math.floor(Math.min(byWidth, byHeight));
+    // Don't shrink cards below 60% of the width they could have just to avoid scrolling.
+    if (w >= CARD_MIN && w >= 0.6 * byWidth && (!best || w > best.w)) best = { cols, w };
+  }
+  // Scrolling needed, or no pictures to enlarge (plain cards stay compact).
+  if (!best) best = { cols: Math.ceil(n / Math.ceil(n / fit)), w: hasCam ? CARD_MAX : 380 };
+  grid.style.setProperty('--cols', best.cols);
+  grid.style.setProperty('--cardw', best.w + 'px');
+}
+new ResizeObserver(layout).observe(grid);
+window.addEventListener('resize', layout);
 
 // Same rules as the ClearCue button: offline = !online; busy = printing (paused/error if a
 // status string says so); ready = ready && online; otherwise the plate is waiting.
@@ -293,6 +335,7 @@ function render(printers) {
     c.el.querySelector('.msg').textContent = errors.has(p.name) ? errors.get(p.name).text : '';
   }
   for (const [name, c] of cards) if (!seen.has(name)) { c.el.remove(); cards.delete(name); }
+  layout();
 
   document.getElementById('summary').textContent = printers.length
     ? Object.entries({ plate: 'to clear', ready: 'ready', printing: 'printing',
