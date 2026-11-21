@@ -114,7 +114,7 @@ same name. Environment variables win.
 | Card | Meaning | Buttons |
 |---|---|---|
 | Green | Ready for the next job | Nothing to do |
-| Solid red, filled button | Plate waiting to be cleared | **Plate cleared – Set Ready**: press once the plate is clear |
+| Red dot, solid green button | Plate waiting to be cleared | **Plate cleared – Set Ready**: press once the plate is clear |
 | Red, slow pulse | Printing, with progress, time left and finish time | Small **pause** and **stop** buttons |
 | Red, fast blink | Paused or error, with time left | **Resume print** and a small **stop** button |
 | Amber | Watchtower reports the printer offline | None |
