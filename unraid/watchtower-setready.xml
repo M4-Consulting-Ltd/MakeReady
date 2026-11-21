@@ -8,7 +8,7 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/M4-Consulting-Ltd/Watchtower-SetReady/issues</Support>
   <Project>https://github.com/M4-Consulting-Ltd/Watchtower-SetReady</Project>
-  <Overview>Virtual Set Ready buttons for a Watchtower 3D-printer farm. One page lists every printer with its state, time left and camera snapshot, and a button to mark the plate cleared or resume a paused print. Open the WebUI and use Settings to enter the Watchtower address and API key. There is no login on the page: anyone on your network who can open it can press the buttons.</Overview>
+  <Overview>Virtual Set Ready buttons for a Watchtower 3D-printer farm. One page lists every printer with its state, time left and camera snapshot, and a button to mark the plate cleared or resume a paused print. Open the WebUI and use Settings to enter the Watchtower address and API key. Set a page password under Settings: without one, anyone on your network who can open the page can press the buttons.</Overview>
   <Category>Tools: Productivity:</Category>
   <WebUI>http://[IP]:[PORT:8080]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/M4-Consulting-Ltd/Watchtower-SetReady/main/unraid/watchtower-setready.xml</TemplateURL>

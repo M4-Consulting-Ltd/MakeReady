@@ -27,15 +27,21 @@ written into config.json by hand:
     WATCHTOWER_INSECURE  "1" to skip HTTPS certificate checks (not recommended)
     HOST                 address to listen on (default 127.0.0.1; 0.0.0.0 for the LAN)
     PORT                 port to listen on (default 8080)
+    PAGE_PASSWORD        password for the page itself (can also be set in Settings, where
+                         it is stored hashed); without one, anyone who can reach the
+                         page can use it
     CONFIG_DIR           folder holding config.json (environment only; default: this folder)
 
 Python 3.8+, standard library only.
 
 Copyright (C) 2026 M4 Consulting Ltd. Licensed under the GNU GPL version 3; see LICENSE.
 """
+import hashlib
+import hmac
 import http.cookiejar
 import json
 import os
+import secrets
 import ssl
 import sys
 import threading
@@ -59,7 +65,7 @@ def load_config():
             cfg = json.load(f)
     for key in ("WATCHTOWER_URL", "WATCHTOWER_API_KEY", "WATCHTOWER_CA",
                 "WATCHTOWER_INSECURE", "WATCHTOWER_USERNAME", "WATCHTOWER_PASSWORD",
-                "HOST", "PORT"):
+                "PAGE_PASSWORD", "HOST", "PORT"):
         if os.environ.get(key):
             cfg[key] = os.environ[key]
     return cfg
@@ -68,7 +74,8 @@ def load_config():
 CFG = load_config()
 LOCK = threading.Lock()
 SAVED_KEYS = ("WATCHTOWER_URL", "WATCHTOWER_API_KEY", "WATCHTOWER_CA", "WATCHTOWER_INSECURE",
-              "WATCHTOWER_USERNAME", "WATCHTOWER_PASSWORD")
+              "WATCHTOWER_USERNAME", "WATCHTOWER_PASSWORD", "PAGE_PASSWORD_HASH",
+              "SESSION_SECRET")
 
 
 def truthy(v):
@@ -117,7 +124,8 @@ def public_config():
     user, password = cam_creds()
     return {"url": base_url(), "hasKey": bool(api_key()),
             "insecure": truthy(CFG.get("WATCHTOWER_INSECURE", "")),
-            "username": user, "hasPassword": bool(password)}
+            "username": user, "hasPassword": bool(password),
+            "hasPagePassword": auth_required()}
 
 
 def update_config(new):
@@ -128,6 +136,9 @@ def update_config(new):
     key = str(new.get("apiKey") or "").strip()
     user = str(new.get("username") or "").strip()
     password = str(new.get("password") or "")
+    page_password = str(new.get("pagePassword") or "")
+    if page_password and len(page_password) < 8:
+        return "The page password must be at least 8 characters."
     with LOCK:
         # Same rule for the camera login: a saved password is only reused for the same
         # address and username.
@@ -146,6 +157,11 @@ def update_config(new):
         CFG["WATCHTOWER_INSECURE"] = "1" if new.get("insecure") else ""
         CFG["WATCHTOWER_USERNAME"] = user
         CFG["WATCHTOWER_PASSWORD"] = password if user else ""
+        if new.get("removePagePassword"):
+            CFG["PAGE_PASSWORD_HASH"] = CFG["SESSION_SECRET"] = ""
+        elif page_password:
+            CFG["PAGE_PASSWORD_HASH"] = hash_password(page_password)
+            CFG["SESSION_SECRET"] = secrets.token_hex(32)   # logs out every other browser
         saved = {}
         if os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, encoding="utf-8") as f:
@@ -158,6 +174,84 @@ def update_config(new):
         os.replace(tmp, CONFIG_PATH)
     cam_reset()
     return None
+
+
+# ---- Page login ------------------------------------------------------------------------
+# Optional password for the page itself. The password is stored as a salted PBKDF2 hash;
+# a logged-in browser holds a cookie signed with SESSION_SECRET, so sessions survive a
+# restart and are all ended by changing the password.
+SESSION_DAYS = 365
+COOKIE = "wsr_session"
+PBKDF2_ROUNDS = 200000
+LOGIN_FAILS = {}      # client address -> times of recent wrong passwords
+MAX_FAILS, FAIL_WINDOW = 5, 60
+
+
+def hash_password(password):
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, PBKDF2_ROUNDS)
+    return "pbkdf2$%d$%s$%s" % (PBKDF2_ROUNDS, salt.hex(), digest.hex())
+
+
+def check_password(password):
+    try:
+        _, rounds, salt, digest = str(CFG.get("PAGE_PASSWORD_HASH", "")).split("$")
+        got = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), int(rounds))
+        return hmac.compare_digest(got.hex(), digest)
+    except ValueError:
+        return False
+
+
+def auth_required():
+    return bool(CFG.get("PAGE_PASSWORD_HASH"))
+
+
+def _sign(expiry):
+    return hmac.new(str(CFG.get("SESSION_SECRET", "")).encode(), str(expiry).encode(),
+                    hashlib.sha256).hexdigest()
+
+
+def session_cookie(clear=False):
+    """Set-Cookie value for a new session (or one that removes it)."""
+    if clear:
+        return "%s=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict" % COOKIE
+    expiry = int(time.time()) + SESSION_DAYS * 86400
+    return "%s=%d.%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Strict" % (
+        COOKIE, expiry, _sign(expiry), SESSION_DAYS * 86400)
+
+
+def session_valid(cookie_header):
+    for part in str(cookie_header or "").split(";"):
+        name, _, value = part.strip().partition("=")
+        if name != COOKIE:
+            continue
+        expiry, _, sig = value.partition(".")
+        if expiry.isdigit() and int(expiry) > time.time() and CFG.get("SESSION_SECRET") \
+                and hmac.compare_digest(sig, _sign(expiry)):
+            return True
+    return False
+
+
+def login_allowed(client):
+    """False while this address has too many recent wrong passwords."""
+    now = time.time()
+    with LOCK:
+        recent = [t for t in LOGIN_FAILS.get(client, []) if now - t < FAIL_WINDOW]
+        LOGIN_FAILS[client] = recent
+        return len(recent) < MAX_FAILS
+
+
+def login_failed(client):
+    with LOCK:
+        LOGIN_FAILS.setdefault(client, []).append(time.time())
+
+
+# A password given as PAGE_PASSWORD (environment or config.json) is hashed at start-up and
+# only kept in memory; it takes precedence over one saved from the page.
+if CFG.get("PAGE_PASSWORD"):
+    CFG["PAGE_PASSWORD_HASH"] = hash_password(str(CFG.pop("PAGE_PASSWORD")))
+if auth_required() and not CFG.get("SESSION_SECRET"):
+    CFG["SESSION_SECRET"] = secrets.token_hex(32)
 
 
 # ---- Cameras -------------------------------------------------------------------------
@@ -524,21 +618,36 @@ COMMANDS = {"set-ready": {"command": "set_ready"},
 class Handler(BaseHTTPRequestHandler):
     server_version = "WatchtowerSetReady/1.0"
 
-    def send(self, status, body, ctype="application/json", retry_after=None):
+    def send(self, status, body, ctype="application/json", retry_after=None, cookie=None):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        # Don't let another site frame the page (to trick someone into pressing a button),
+        # sniff content types, or learn the address from links.
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
         if retry_after:
             self.send_header("Retry-After", retry_after)
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
+
+    def authed(self):
+        return not auth_required() or session_valid(self.headers.get("Cookie"))
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path in ("/", "/index.html"):
             with open(os.path.join(HERE, "index.html"), "rb") as f:
                 self.send(200, f.read(), "text/html; charset=utf-8")
+        elif path == "/api/session":
+            self.send(200, json.dumps({"required": auth_required(),
+                                       "authed": self.authed()}).encode())
+        elif not self.authed():
+            self.send(401, b'{"error":"Log in to use this page.","login":true}')
         elif path == "/api/config":
             self.send(200, json.dumps(public_config()).encode())
         elif path == "/api/queue":
@@ -571,6 +680,30 @@ class Handler(BaseHTTPRequestHandler):
             return
         raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         parts = self.path.split("?", 1)[0].split("/")
+        if parts == ["", "api", "login"]:
+            client = self.client_address[0]
+            if not login_allowed(client):
+                self.send(429, b'{"error":"Too many wrong passwords. Wait a minute and try again."}',
+                          retry_after=str(FAIL_WINDOW))
+                return
+            try:
+                password = str((json.loads(raw or b"{}") or {}).get("password") or "")
+            except (ValueError, AttributeError):
+                password = ""
+            if not auth_required():
+                self.send(200, b'{"ok":true}')
+            elif check_password(password):
+                self.send(200, b'{"ok":true}', cookie=session_cookie())
+            else:
+                login_failed(client)
+                self.send(401, b'{"error":"Wrong password."}')
+            return
+        if parts == ["", "api", "logout"]:
+            self.send(200, b'{"ok":true}', cookie=session_cookie(clear=True))
+            return
+        if not self.authed():
+            self.send(401, b'{"error":"Log in to use this page.","login":true}')
+            return
         if parts == ["", "api", "config"]:
             try:
                 new = json.loads(raw or b"{}")
@@ -582,7 +715,9 @@ class Handler(BaseHTTPRequestHandler):
             if err:
                 self.send(400, json.dumps({"error": err}).encode())
             else:
-                self.send(200, json.dumps(public_config()).encode())
+                # Setting or changing the page password ends every session; keep this one.
+                self.send(200, json.dumps(public_config()).encode(),
+                          cookie=session_cookie() if auth_required() else None)
             return
         # /api/printers/{name}/<one of COMMANDS> ; {name} arrives URL-encoded
         if len(parts) == 5 and parts[:3] == ["", "api", "printers"] and parts[3] \
@@ -603,6 +738,9 @@ def main():
     port = int(CFG.get("PORT", 8080))
     print("Watchtower SetReady on http://%s:%d  ->  %s"
           % (host, port, base_url() or "(not set up: open the page and use Settings)"))
+    if not auth_required() and host not in ("127.0.0.1", "localhost", "::1"):
+        print("WARNING: no page password is set, so anyone who can reach this address can "
+              "use the page. Set one under Settings.", file=sys.stderr)
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 
 
