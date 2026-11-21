@@ -29,6 +29,11 @@
   .empty { grid-column: 1 / -1; color: var(--muted); padding: 32px 0; text-align: center; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
           padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .cam { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px;
+         background: #000; display: block; }
+  .cam[hidden] { display: none; }
+  #camnote { max-width: 1168px; margin: -8px auto 10px; padding: 0 16px; font-size: 13px;
+             color: var(--muted); }
   .name { font-weight: 600; overflow-wrap: anywhere; }
   .model { color: var(--muted); font-size: 13px; min-height: 18px; }
   .status { display: flex; align-items: center; gap: 8px; font-size: 14px; }
@@ -63,6 +68,9 @@
   dialog small { display: block; font-weight: 400; color: var(--muted); margin-top: 4px; }
   dialog .check { display: flex; gap: 10px; align-items: flex-start; }
   dialog .check input { margin-top: 3px; }
+  dialog fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 14px;
+                    padding: 10px 12px 12px; }
+  dialog legend { font-size: 14px; font-weight: 600; padding: 0 4px; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .msg { font-size: 13px; color: var(--red); min-height: 18px; }
 </style>
@@ -92,6 +100,18 @@
         <small>Needed for https unless Watchtower's CA certificate file is set on the
           server. The connection is still encrypted, but not verified.</small></span>
     </label>
+    <fieldset>
+      <legend>Cameras (optional)</legend>
+      <label>Watchtower username
+        <input id="cfg-user" autocomplete="off" spellcheck="false" autocapitalize="none">
+      </label>
+      <label>Watchtower password
+        <input id="cfg-pass" type="password" autocomplete="off">
+        <small id="cfg-pass-hint"></small>
+      </label>
+      <small>Camera pictures aren't covered by the API key, so they need a Watchtower
+        login. Leave the username blank for no cameras.</small>
+    </fieldset>
     <div id="cfg-error" class="msg" role="alert"></div>
     <div class="actions">
       <button type="button" id="cfg-cancel" class="plain">Cancel</button>
@@ -100,6 +120,7 @@
   </form>
 </dialog>
 <div id="banner" role="alert"></div>
+<div id="camnote"></div>
 <main id="grid"><p class="empty">Loading printers…</p></main>
 
 <script>
@@ -206,11 +227,12 @@ function render(printers) {
     let c = cards.get(p.name);
     if (!c) {
       const el = document.createElement('section');
-      el.innerHTML = '<div><div class="name"></div><div class="model"></div></div>' +
+      el.innerHTML = '<img class="cam" alt="" hidden><div><div class="name"></div><div class="model"></div></div>' +
         '<div class="status"><span class="dot"></span><span class="label"></span></div>' +
         '<div class="eta"></div>' +
         '<button type="button"></button><div class="msg" role="status"></div>';
       el.querySelector('.name').textContent = p.name;
+      el.querySelector('.cam').alt = 'Camera: ' + p.name;
       el.querySelector('button').addEventListener('click', () => setReady(p.name));
       c = { el, state: null };
       cards.set(p.name, c);
@@ -257,6 +279,7 @@ async function refresh() {
     lastPrinters = printersFrom(JSON.parse(text));
     render(lastPrinters);
     banner.classList.remove('show');
+    refreshCams();
     document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
   } catch (e) {
     banner.textContent = (e instanceof TypeError ? "Can't reach the SetReady server." : e.message) +
@@ -287,10 +310,39 @@ async function setReady(name) {
   timer = setTimeout(refresh, 1500);      // give Watchtower a beat, then confirm
 }
 
+// ---- Cameras: one snapshot per printer, refreshed with the printer list ----
+let camPrinters = new Set(), camsAt = 0;
+const camBusy = new Set(), camFails = new Map();
+
+async function loadCams() {
+  camsAt = Date.now();
+  try {
+    const c = await (await fetch('api/cameras', { cache: 'no-store' })).json();
+    camPrinters = new Set(c.printers || []);
+    document.getElementById('camnote').textContent = c.error || '';
+  } catch { /* keep the last list; the printer poll reports a dead server */ }
+}
+
+async function refreshCams() {
+  if (Date.now() - camsAt > 60000) await loadCams();
+  for (const [name, c] of cards) {
+    const img = c.el.querySelector('.cam');
+    if (!camPrinters.has(name)) { img.hidden = true; continue; }
+    if (camBusy.has(name)) continue;            // previous frame still loading
+    camBusy.add(name);
+    const next = new Image();                   // load off-screen, then swap: no flicker
+    next.onload = () => { img.src = next.src; img.hidden = false;
+                          camFails.delete(name); camBusy.delete(name); };
+    next.onerror = () => { const n = (camFails.get(name) || 0) + 1; camFails.set(name, n);
+                           if (n >= 3) img.hidden = true; camBusy.delete(name); };
+    next.src = 'api/camera/' + encodeURIComponent(name) + '?t=' + Date.now();
+  }
+}
+
 // ---- Settings: Watchtower address + API key, saved by the server ----
 const dlg = document.getElementById('settings');
 const $ = id => document.getElementById(id);
-let askedSetup = false, savedUrl = '', hasKey = false;
+let askedSetup = false, savedUrl = '', hasKey = false, savedUser = '', hasPass = false;
 
 function keyHint() {
   const reuse = hasKey && $('cfg-url').value.trim() === savedUrl;
@@ -299,17 +351,24 @@ function keyHint() {
     ? 'A key is saved. Leave blank to keep it.'
     : hasKey ? 'Re-enter the key when changing the address.'
              : 'From Watchtower; needs the control scope with set_ready.';
+  const user = $('cfg-user').value.trim();
+  const keepPass = hasPass && user === savedUser && $('cfg-url').value.trim() === savedUrl;
+  $('cfg-pass').required = !!user && !keepPass;
+  $('cfg-pass-hint').textContent = user && keepPass ? 'A password is saved. Leave blank to keep it.' : '';
 }
 
 async function openSettings() {
   if (dlg.open) return;
   $('cfg-error').textContent = '';
   $('cfg-key').value = '';
+  $('cfg-pass').value = '';
   try {
     const c = await (await fetch('api/config', { cache: 'no-store' })).json();
     savedUrl = c.url; hasKey = c.hasKey;
     $('cfg-url').value = c.url;
     $('cfg-insecure').checked = c.insecure;
+    savedUser = c.username || ''; hasPass = !!c.hasPassword;
+    $('cfg-user').value = savedUser;
   } catch { /* server unreachable: the form still opens, saving will report it */ }
   keyHint();
   dlg.showModal();
@@ -318,18 +377,21 @@ async function openSettings() {
 $('open-settings').addEventListener('click', openSettings);
 $('cfg-cancel').addEventListener('click', () => dlg.close());
 $('cfg-url').addEventListener('input', keyHint);
+$('cfg-user').addEventListener('input', keyHint);
 $('settings-form').addEventListener('submit', async e => {
   e.preventDefault();
   try {
     const r = await fetch('api/config', { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: $('cfg-url').value, apiKey: $('cfg-key').value,
-                             insecure: $('cfg-insecure').checked }) });
+                             insecure: $('cfg-insecure').checked,
+                             username: $('cfg-user').value, password: $('cfg-pass').value }) });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || 'Could not save.');
     dlg.close();
     grid.innerHTML = '<p class="empty">Loading printers…</p>';
     cards.clear(); pending.clear(); errors.clear(); lastPrinters = [];
+    camsAt = 0; camFails.clear();
     document.getElementById('summary').textContent = '';
     refresh();
   } catch (err) {
