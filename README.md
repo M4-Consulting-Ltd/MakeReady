@@ -46,7 +46,7 @@ is no login; with
 |---|---|---|
 | Green | Ready for the next job | Nothing to do |
 | Solid red, filled button | Plate waiting to be cleared | **Press once the plate is clear** |
-| Red, slow pulse | Printing | Disabled |
+| Red, slow pulse | Printing, with progress, time left and finish time when Watchtower reports them | Disabled |
 | Red, fast blink | Paused or error | Disabled |
 | Amber | Watchtower reports the printer offline | Disabled |
 
