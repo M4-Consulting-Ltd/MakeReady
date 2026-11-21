@@ -604,7 +604,10 @@ function swatch(f) {
 }
 // Colour is shown by the swatch, never as a hex code; the code stays in the tooltip.
 function chipText(f) {
-  return f.name ? f.name + ' ' + filamentLabel(f) : filamentLabel(f);
+  const text = f.name ? f.name + ' ' + filamentLabel(f) : filamentLabel(f);
+  // Weight the job uses, when known (job filaments only): "Gold PLA Basic (15g)".
+  if (typeof f.grams !== 'number') return text;
+  return text + ' (' + (f.grams > 0 && f.grams < 1 ? '<1' : Math.round(f.grams)) + 'g)';
 }
 function chip(f, missing) {
   const c = document.createElement('span');
@@ -695,7 +698,7 @@ function renderQueue(q) {
       verdict.textContent = 'Can run on ' + j.ready.join(', ') + '.';
     } else if (j.best) {
       verdict.append(el('b', '', 'No printer has all of these. '),
-                     'Closest is ' + j.best.printer + ': load ', ...lacking, '.');
+                     'Closest is ' + j.best.printer + ': load ', ...lacking);
     } else {
       verdict.textContent = 'Waiting for a printer.';
     }
