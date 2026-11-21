@@ -54,6 +54,8 @@ With the same Watchtower login filled in, the page also shows:
   and one of: which printers can run it now, that its assigned printer is missing
   something, or that no printer has everything, with the closest printer and what to
   load into it. Colours are shown as swatches (the colour code is in the tooltip).
+  Jobs with everything loaded have a green edge, the others a red one; **Hide jobs with
+  filament loaded** leaves only the ones that need attention.
 
 The matching is this page's own estimate, not Watchtower's scheduler: material and
 variant (Basic, Matte) must match; colour must be the same for jobs in "exact" mode and
