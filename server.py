@@ -463,6 +463,17 @@ def _matches(need, slot, tolerance):
     return color_distance(need["color"], slot["color"]) <= tolerance
 
 
+def _grams_left(a):
+    """Grams left on a loaded spool, or None. The printer's own percentage (read from the
+    spool's tag) times the spool's full weight; Watchtower's remaining-weight figure is only
+    used when there is no percentage, because it is often 0 for spools it doesn't track."""
+    pct, full = a.get("remaining_percentage"), a.get("spool_initial_weight")
+    if isinstance(pct, (int, float)):
+        return round(pct / 100.0 * (full if isinstance(full, (int, float)) and full > 0 else 1000))
+    left = a.get("spool_remaining_weight")
+    return round(left) if isinstance(left, (int, float)) and left > 0 else None
+
+
 def build_queue(queue, assignments, table):
     """Combine Watchtower's queue and filament assignments into what the page shows."""
     loaded, models = {}, {}
@@ -481,7 +492,7 @@ def build_queue(queue, assignments, table):
                 "variant": str(a.get("variant") or ""),
                 "color": _hex(a.get("spool_color_hex") or a.get("color_hex")),
                 "name": str(a.get("spool_color") or a.get("color_name") or ""),
-                "pct": a.get("remaining_percentage")})
+                "left": _grams_left(a)})
         slots.sort(key=lambda x: x.pop("order"))
         loaded[info["name"]] = slots
 
@@ -520,6 +531,17 @@ def build_queue(queue, assignments, table):
                    for name, slots in loaded.items() if compatible(name)}
         for i, need in enumerate(fils):
             need["on"] = sorted(name for name, miss in missing.items() if i not in miss)
+        # Where a printer has the filament but not enough of it: the job needs more grams
+        # than the fullest matching spool holds (only when that amount is known).
+        short = {}
+        for name, miss in missing.items():
+            for i, need in enumerate(fils):
+                if i in miss or not isinstance(need["grams"], (int, float)):
+                    continue
+                have = [sl["left"] for sl in loaded[name]
+                        if sl["left"] is not None and _matches(need, sl, tolerance)]
+                if have and max(have) < need["grams"]:
+                    short.setdefault(name, []).append({"i": i, "have": max(have)})
         assigned = j.get("printer_id") or None
         ready = sorted(name for name, miss in missing.items() if not miss)
         best = None
@@ -537,7 +559,7 @@ def build_queue(queue, assignments, table):
                      "printer": assigned, "ready": ready, "best": best, "filaments": fils,
                      "exact": exact, "model": model,
                      # per printer of the right model: which filaments (by index) it lacks
-                     "missing_by": missing, "order": len(jobs),
+                     "missing_by": missing, "short_by": short, "order": len(jobs),
                      "created": str(j.get("created_at") or ""),
                      "copies": md.get("quantity_remaining"),
                      "minutes": round(md["print_time_seconds"] / 60)
