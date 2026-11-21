@@ -26,6 +26,22 @@ The **Settings** button in the page header changes these later. They are saved i
 `config.json` next to `server.py`. The API key is never shown again, and has to be
 re-entered whenever the address changes.
 
+### Cameras (optional)
+
+To show a camera picture on each printer's card, fill in **Cameras** in the Settings
+dialog with a Watchtower username and password. Each card then shows a snapshot that
+refreshes every 5 seconds (a still image, not live video). A camera named "chamber" is
+preferred when a printer has several; printers with no online camera just show no picture.
+
+Cameras aren't part of Watchtower's public API, so the API key can't fetch them. The
+server logs in to Watchtower's own web interface instead, which has two consequences:
+
+- The password is stored in `config.json` on the computer running `server.py`, and it
+  grants much more than the API key does. Use a dedicated Watchtower user with as few
+  rights as possible if you can.
+- That interface is undocumented and can change with a Watchtower update. If it does,
+  the pictures stop; the buttons keep working.
+
 Other options go in `config.json` (see `config.example.json`) or environment variables
 of the same name:
 
@@ -34,7 +50,8 @@ of the same name:
 - `PORT`: default `8080`.
 - `WATCHTOWER_CA`: path to Watchtower's CA certificate (PEM), to verify `https://`
   properly instead of skipping the check.
-- `WATCHTOWER_URL`, `WATCHTOWER_API_KEY`: the same values as the Settings dialog.
+- `WATCHTOWER_URL`, `WATCHTOWER_API_KEY`, `WATCHTOWER_USERNAME`, `WATCHTOWER_PASSWORD`:
+  the same values as the Settings dialog.
 
 **Anyone who can open the page can press the buttons and change the settings.** There
 is no login; with
@@ -55,12 +72,13 @@ waiting, e.g. `(2) Watchtower SetReady`.
 
 ## How it works
 
-`server.py` serves `index.html` and forwards two calls to Watchtower, adding the API key:
+`server.py` serves `index.html` and forwards these calls to Watchtower, adding the API key:
 
 | Page calls | Watchtower call |
 |---|---|
 | `GET /api/printers` | `GET {base}/printers` |
 | `POST /api/printers/{name}/set-ready` | `POST {base}/printers/{name}/commands` with `{"command":"set_ready"}` |
+| `GET /api/cameras`, `GET /api/camera/{name}` | (camera login only) `GET /api/system/streams`, `GET /api/go2rtc/frame.jpeg?src=…` |
 
 The page talks to this small server rather than straight to Watchtower so the API key
 never reaches the browser, and so the browser doesn't have to trust Watchtower's

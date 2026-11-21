@@ -17,6 +17,8 @@ written into config.json by hand:
 
     WATCHTOWER_URL       Watchtower address or API base URL (/api/public/v1 is added)
     WATCHTOWER_API_KEY   wt_... key with the control scope + set_ready
+    WATCHTOWER_USERNAME  optional Watchtower login, used only for camera snapshots
+    WATCHTOWER_PASSWORD  (cameras are not part of the public API the key covers)
     WATCHTOWER_CA        path to Watchtower's CA certificate (PEM), for HTTPS
     WATCHTOWER_INSECURE  "1" to skip HTTPS certificate checks (not recommended)
     HOST                 address to listen on (default 127.0.0.1; 0.0.0.0 for the LAN)
@@ -24,11 +26,13 @@ written into config.json by hand:
 
 Python 3.8+, standard library only.
 """
+import http.cookiejar
 import json
 import os
 import ssl
 import sys
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -45,7 +49,8 @@ def load_config():
         with open(path, encoding="utf-8") as f:
             cfg = json.load(f)
     for key in ("WATCHTOWER_URL", "WATCHTOWER_API_KEY", "WATCHTOWER_CA",
-                "WATCHTOWER_INSECURE", "HOST", "PORT"):
+                "WATCHTOWER_INSECURE", "WATCHTOWER_USERNAME", "WATCHTOWER_PASSWORD",
+                "HOST", "PORT"):
         if os.environ.get(key):
             cfg[key] = os.environ[key]
     return cfg
@@ -54,7 +59,8 @@ def load_config():
 CFG = load_config()
 LOCK = threading.Lock()
 CONFIG_PATH = os.path.join(HERE, "config.json")
-SAVED_KEYS = ("WATCHTOWER_URL", "WATCHTOWER_API_KEY", "WATCHTOWER_CA", "WATCHTOWER_INSECURE")
+SAVED_KEYS = ("WATCHTOWER_URL", "WATCHTOWER_API_KEY", "WATCHTOWER_CA", "WATCHTOWER_INSECURE",
+              "WATCHTOWER_USERNAME", "WATCHTOWER_PASSWORD")
 
 
 def truthy(v):
@@ -100,8 +106,10 @@ def ssl_context():
 
 def public_config():
     """What the page may see. The API key itself is never sent back."""
+    user, password = cam_creds()
     return {"url": base_url(), "hasKey": bool(api_key()),
-            "insecure": truthy(CFG.get("WATCHTOWER_INSECURE", ""))}
+            "insecure": truthy(CFG.get("WATCHTOWER_INSECURE", "")),
+            "username": user, "hasPassword": bool(password)}
 
 
 def update_config(new):
@@ -110,7 +118,15 @@ def update_config(new):
     if not url:
         return "Enter the Watchtower address, e.g. 192.168.1.50 or https://192.168.1.50:8443."
     key = str(new.get("apiKey") or "").strip()
+    user = str(new.get("username") or "").strip()
+    password = str(new.get("password") or "")
     with LOCK:
+        # Same rule for the camera login: a saved password is only reused for the same
+        # address and username.
+        if user and not password and url == base_url() and user == cam_creds()[0]:
+            password = cam_creds()[1]
+        if user and not password:
+            return "Enter the password for the camera login."
         # A saved key is only reused for the address it was saved for, so changing the
         # address can't be used to send the key somewhere else.
         if not key and url == base_url():
@@ -120,6 +136,8 @@ def update_config(new):
         CFG["WATCHTOWER_URL"] = url
         CFG["WATCHTOWER_API_KEY"] = key
         CFG["WATCHTOWER_INSECURE"] = "1" if new.get("insecure") else ""
+        CFG["WATCHTOWER_USERNAME"] = user
+        CFG["WATCHTOWER_PASSWORD"] = password if user else ""
         saved = {}
         if os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, encoding="utf-8") as f:
@@ -130,7 +148,131 @@ def update_config(new):
                   encoding="utf-8") as f:
             json.dump(saved, f, indent=2)
         os.replace(tmp, CONFIG_PATH)
+    cam_reset()
     return None
+
+
+# ---- Cameras -------------------------------------------------------------------------
+# Watchtower's public API has no camera call, so snapshots come from the private web API
+# its own pages use: log in for a session cookie, list the streams, fetch single JPEGs.
+# That API is undocumented and may change between Watchtower versions.
+STREAMS_TTL = 30      # seconds to reuse the stream list
+FRAME_TTL = 2         # seconds to reuse a frame, so several open pages share one fetch
+CAM_RETRY = 60        # seconds to wait after a failed login / stream list
+CAM_LOCK = threading.Lock()
+CAM = {}
+
+
+def cam_reset():
+    with CAM_LOCK:
+        CAM.update(opener=None, streams={}, streams_at=0, retry_at=0, error="", frames={})
+
+
+def cam_creds():
+    return str(CFG.get("WATCHTOWER_USERNAME", "")).strip(), str(CFG.get("WATCHTOWER_PASSWORD", ""))
+
+
+def root_url():
+    parts = urllib.parse.urlsplit(base_url())
+    return "%s://%s" % (parts.scheme, parts.netloc) if parts.netloc else ""
+
+
+def cam_opener():
+    """A logged-in opener (session cookie). Call with CAM_LOCK held."""
+    if CAM["opener"] is None:
+        user, password = cam_creds()
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=ssl_context()),
+            urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        req = urllib.request.Request(
+            root_url() + "/api/auth/login", method="POST",
+            data=json.dumps({"username": user, "password": password,
+                             "remember_me": True}).encode(),
+            headers={"Content-Type": "application/json", "Accept": "application/json"})
+        try:
+            with opener.open(req, timeout=TIMEOUT) as r:
+                ok = json.loads(r.read() or b"{}").get("success")
+        except urllib.error.HTTPError as e:
+            if e.code in (400, 401, 403):
+                raise RuntimeError("Watchtower rejected the camera username or password")
+            raise
+        if not ok:
+            raise RuntimeError("Watchtower rejected the camera username or password")
+        CAM["opener"] = opener
+    return CAM["opener"]
+
+
+def cam_fetch(path, timeout=TIMEOUT):
+    """GET a private-API path with the session, logging in again once if it expired."""
+    for attempt in (0, 1):
+        with CAM_LOCK:
+            opener = cam_opener()
+        try:
+            with opener.open(root_url() + path, timeout=timeout) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403) and attempt == 0:
+                with CAM_LOCK:
+                    if CAM["opener"] is opener:
+                        CAM["opener"] = None
+                continue
+            raise
+
+
+def cam_streams():
+    """({printer name: stream name}, error). Chamber cameras first; online streams only."""
+    user, password = cam_creds()
+    if not (user and password and root_url()):
+        return {}, ""
+    now = time.time()
+    with CAM_LOCK:
+        if now < CAM["retry_at"]:
+            return {}, CAM["error"]
+        if CAM["streams_at"] and now - CAM["streams_at"] < STREAMS_TTL:
+            return CAM["streams"], ""
+    try:
+        reply = json.loads(cam_fetch("/api/system/streams"))
+        data = reply.get("data", reply) if isinstance(reply, dict) else {}
+        streams = [s for s in data.get("streams") or []
+                   if isinstance(s, dict) and s.get("enabled", True)
+                   and str(s.get("state", "")).upper() == "ONLINE"
+                   and s.get("printer_name") and (s.get("stream_name") or s.get("name"))]
+        streams.sort(key=lambda s: "chamber" not in str(s.get("camera_name") or "").lower())
+        found = {}
+        for s in streams:
+            found.setdefault(s["printer_name"], s.get("stream_name") or s.get("name"))
+        with CAM_LOCK:
+            CAM.update(streams=found, streams_at=time.time(), error="")
+        return found, ""
+    except Exception as e:
+        err = "Cameras unavailable: %s." % (getattr(e, "reason", None) or e)
+        with CAM_LOCK:
+            CAM.update(retry_at=time.time() + CAM_RETRY, error=err, streams_at=0)
+        return {}, err
+
+
+def cam_frame(printer):
+    """One JPEG for a printer, or None."""
+    stream = cam_streams()[0].get(printer)
+    if not stream:
+        return None
+    with CAM_LOCK:
+        at, jpeg = CAM["frames"].get(printer, (0, None))
+    if jpeg and time.time() - at < FRAME_TTL:
+        return jpeg
+    try:
+        jpeg = cam_fetch("/api/go2rtc/frame.jpeg?src=" + urllib.parse.quote(stream, safe=""),
+                         timeout=15)
+    except Exception:
+        return None
+    if jpeg[:2] != b"\xff\xd8":
+        return None
+    with CAM_LOCK:
+        CAM["frames"][printer] = (time.time(), jpeg)
+    return jpeg
+
+
+cam_reset()
 
 
 def upstream(method, path, body=None):
@@ -189,6 +331,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(200, f.read(), "text/html; charset=utf-8")
         elif path == "/api/config":
             self.send(200, json.dumps(public_config()).encode())
+        elif path == "/api/cameras":
+            streams, err = cam_streams()
+            self.send(200, json.dumps({"enabled": all(cam_creds()), "error": err,
+                                       "printers": sorted(streams)}).encode())
+        elif path.startswith("/api/camera/"):
+            jpeg = cam_frame(urllib.parse.unquote(path[len("/api/camera/"):]))
+            if jpeg:
+                self.send(200, jpeg, "image/jpeg")
+            else:
+                self.send(404, b'{"error":"No camera frame"}')
         elif path == "/api/printers":
             status, body, ra = upstream("GET", "/printers")
             self.send(status, body, retry_after=ra)
