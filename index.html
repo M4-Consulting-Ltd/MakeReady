@@ -98,6 +98,7 @@
   button.danger { background: var(--red); color: #fff; border-color: var(--red); }
   #confirm p { margin: 0 0 16px; color: var(--muted); font-size: 15px; }
   .msg { font-size: 13px; color: var(--red); }
+  .msg.info { color: var(--muted); }       /* a note, not a failure */
   /* Filament: round swatches for what is loaded, labelled chips for what a job needs */
   .loaded { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px;
             color: var(--muted); }
@@ -420,6 +421,7 @@ function render(printers) {
     btn.setAttribute('aria-disabled', !(state === 'plate' || state === 'paused') || sending);
     btn.setAttribute('aria-label', p.name + ': ' + text);
     c.el.querySelector('.msg').textContent = errors.has(p.name) ? errors.get(p.name).text : '';
+    c.el.querySelector('.msg').classList.toggle('info', !!(errors.has(p.name) && errors.get(p.name).info));
     if (c.filState !== state) { c.filState = state; renderCardFilament(p.name, c); }   // advice depends on state
   }
   for (const [name, c] of cards) if (!seen.has(name)) { c.el.remove(); cards.delete(name); }
@@ -869,11 +871,13 @@ async function reloadFilament(name) {
   errors.delete(name);
   if (c) renderCardFilament(name, c);
   const tick = setInterval(() => refreshQueue(true), 4000);       // show slots as they update
-  let failure = '';
+  let failure = '', note = '';
   try {
     const r = await fetch('api/printers/' + encodeURIComponent(name) + '/reread-filament',
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-    if (!r.ok) failure = (await r.json().catch(() => ({}))).error || 'Could not re-read filament.';
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) failure = out.error || 'Could not re-read filament.';
+    else note = out.note || '';                   // e.g. a slot skipped because it is loaded
   } catch (e) {
     failure = "Can't reach the SetReady server.";
   }
@@ -883,9 +887,10 @@ async function reloadFilament(name) {
   rereading.delete(name);
   const now = cards.get(name);
   if (now) {
-    if (failure) errors.set(name, { state: now.state, text: failure });
+    if (failure || note) errors.set(name, { state: now.state, text: failure || note, info: !failure });
     renderCardFilament(name, now);
-    now.el.querySelector('.msg').textContent = failure;
+    now.el.querySelector('.msg').textContent = failure || note;
+    now.el.querySelector('.msg').classList.toggle('info', !failure && !!note);
   }
 }
 
