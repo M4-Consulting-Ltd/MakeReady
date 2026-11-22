@@ -859,7 +859,7 @@ async function refreshQueue(fresh) {
 
 // The button beside "Loaded" (idle printers only): ask the printer, through Watchtower, to
 // read every AMS slot's tag again, redrawing as the readings come in. A slot takes several
-// seconds, so a full AMS takes about half a minute. If the re-read can't be done (for example
+// seconds, so a full AMS takes about a minute. If the re-read can't be done (for example
 // no Watchtower login is set), it still refreshes what Watchtower currently reports.
 const rereading = new Set();      // printer names with a re-read in progress
 async function reloadFilament(name) {

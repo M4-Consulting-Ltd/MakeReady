@@ -30,7 +30,7 @@ written into config.json by hand:
     PAGE_PASSWORD        password for the page itself (can also be set in Settings, where
                          it is stored hashed); without one, anyone who can reach the
                          page can use it
-    REREAD_GAP           seconds to wait between AMS slots when re-reading tags (default 7;
+    REREAD_GAP           seconds to wait between AMS slots when re-reading tags (default 15;
                          environment only)
     CONFIG_DIR           folder holding config.json (environment only; default: this folder)
 
@@ -579,7 +579,7 @@ def build_queue(queue, assignments, table):
 # over its Socket.IO connection, and gets printer_command_response {"success", "message"}.
 # We do the same with the logged-in session, using Socket.IO's plain-HTTP polling transport
 # so no extra library is needed. One slot at a time, with a pause for the AMS to finish.
-REREAD_GAP = float(os.environ.get("REREAD_GAP") or 7)      # seconds between slots
+REREAD_GAP = float(os.environ.get("REREAD_GAP") or 15)     # seconds between slots
 REREAD_BUSY = set()                                        # printers being re-read now
 
 
