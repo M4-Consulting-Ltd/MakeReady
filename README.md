@@ -105,7 +105,7 @@ same name. Environment variables win.
 | `WATCHTOWER_CA` | Path to Watchtower's CA certificate (PEM), to verify `https://` properly instead of skipping the check |
 | `PAGE_PASSWORD` | The page password, in plain text; takes precedence over one set in Settings |
 | `CONFIG_DIR` | Folder holding `config.json` (environment only) |
-| `REREAD_GAP` | Seconds to wait between AMS slots when re-reading tags, default `7` (environment only) |
+| `REREAD_GAP` | Seconds to wait between AMS slots when re-reading tags, default `15` (environment only) |
 | `WATCHTOWER_URL`, `WATCHTOWER_API_KEY`, `WATCHTOWER_USERNAME`, `WATCHTOWER_PASSWORD` | The same values as the Settings dialog |
 
 ## Using the page
@@ -145,7 +145,7 @@ With the Watchtower login set:
   or tap a swatch for the name, type, grams left and slot. While the printer isn't
   printing, a small button beside the swatches asks the printer to **re-read the tags**
   of every AMS slot, for when you have swapped a spool and Watchtower still shows the
-  old one. It takes about half a minute for a four-slot AMS, and the swatches update as
+  old one. It takes about a minute for a four-slot AMS, and the swatches update as
   each slot is read. Only Bambu spools with a tag can be read this way. Below it, advice
   about the queue:
   - *Idle printer* (plate waiting, or ready): either **Set Ready can pick up a waiting
