@@ -105,6 +105,7 @@ same name. Environment variables win.
 | `WATCHTOWER_CA` | Path to Watchtower's CA certificate (PEM), to verify `https://` properly instead of skipping the check |
 | `PAGE_PASSWORD` | The page password, in plain text; takes precedence over one set in Settings |
 | `CONFIG_DIR` | Folder holding `config.json` (environment only) |
+| `REREAD_GAP` | Seconds to wait between AMS slots when re-reading tags, default `7` (environment only) |
 | `WATCHTOWER_URL`, `WATCHTOWER_API_KEY`, `WATCHTOWER_USERNAME`, `WATCHTOWER_PASSWORD` | The same values as the Settings dialog |
 
 ## Using the page
@@ -141,7 +142,11 @@ has several; printers with no online camera show no picture.
 With the Watchtower login set:
 
 - **On each card:** a row of colour swatches for the filament loaded in its slots. Hover
-  or tap a swatch for the name, type, grams left and slot. Below it, advice
+  or tap a swatch for the name, type, grams left and slot. While the printer isn't
+  printing, a small button beside the swatches asks the printer to **re-read the tags**
+  of every AMS slot, for when you have swapped a spool and Watchtower still shows the
+  old one. It takes about half a minute for a four-slot AMS, and the swatches update as
+  each slot is read. Only Bambu spools with a tag can be read this way. Below it, advice
   about the queue:
   - *Idle printer* (plate waiting, or ready): either **Set Ready can pick up a waiting
     job**, naming the oldest job its loaded filament can run, or **No waiting job can
@@ -259,6 +264,7 @@ Private web API, using the Watchtower login:
 |---|---|
 | `GET /api/cameras`, `GET /api/camera/{name}` | `GET /api/system/streams`, `GET /api/go2rtc/frame.jpeg?src=…` |
 | `GET /api/queue` | `GET /api/queue`, `GET /api/filament/assignments`, `GET /api/printers` |
+| `POST /api/printers/{name}/reread-filament` | Socket.IO event `printer_command` with `{"command":"read_slot_rfid","args":{"ams_index","tray_index"}}`, once per AMS slot |
 
 The server's own calls: `GET`/`POST /api/config` (settings), `GET /api/session`,
 `POST /api/login` and `POST /api/logout` (page password).
