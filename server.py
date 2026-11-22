@@ -673,27 +673,28 @@ def reread_filament(printer):
         pid = next((k for k, v in printer_table().items() if v["name"] == printer), None)
         entry = (_unwrap(json.loads(cam_fetch("/api/filament/assignments"))).get("printers")
                  or {}).get(pid) or {}
-        slots = sorted({(a.get("system_index") or 0, a.get("slot_index") or 0)
-                        for a in entry.get("assignments") or [] if a.get("slot_type") == "ams"})
-        if not slots:
+        ams = [a for a in entry.get("assignments") or [] if a.get("slot_type") == "ams"]
+        if not ams:
             return 404, {"error": "%s has no AMS slots to re-read." % printer}
-        # The printer can't read the tag of the slot whose filament is fed into it, so that
-        # slot is left out. Its spool can't have been swapped without unloading anyway.
+        # Only the slots Watchtower shows as empty are re-read: that is how a spool put in
+        # while the printer was busy looks until its tag is read. Slots that already have a
+        # reading are left alone, which also avoids the slot feeding the printer (the printer
+        # can't read that one) and keeps the whole thing quick.
+        slots = sorted({(a.get("system_index") or 0, a.get("slot_index") or 0) for a in ams
+                        if a.get("is_empty") or not a.get("material_type")})
         active = entry.get("active_source") or {}
-        loaded = ((active.get("system_index") or 0, active.get("slot_index"))
-                  if active.get("source_type") == "ams" else None)
-        results = reread_slots(printer, [sl for sl in slots if sl != loaded])
+        if active.get("source_type") == "ams":
+            slots = [sl for sl in slots
+                     if sl != (active.get("system_index") or 0, active.get("slot_index"))]
         with CAM_LOCK:
             CAM["queue_at"] = 0                              # next queue read is fresh
-        notes = []
-        if loaded in slots:
-            notes.append("Slot %d wasn't re-read because its filament is loaded in the printer."
-                         % (loaded[1] + 1))
-        for r in results:
-            if not r["success"]:
-                notes.append("Slot %d: %s" % (r["tray"] + 1, r["message"]))
+        if not slots:
+            return 200, {"ok": True, "reread": 0, "results": [],
+                         "note": "No empty slots to re-read."}
+        results = reread_slots(printer, slots)
+        notes = ["Slot %d: %s" % (r["tray"] + 1, r["message"]) for r in results if not r["success"]]
         done = sum(1 for r in results if r["success"])
-        if not done and results:
+        if not done:
             return 502, {"error": " ".join(notes), "results": results}
         return 200, {"ok": True, "reread": done, "note": " ".join(notes), "results": results}
     except Exception as e:
