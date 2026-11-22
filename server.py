@@ -639,9 +639,9 @@ def reread_slots(printer, slots):
                             "success": bool(reply and reply.get("success")),
                             "message": str((reply or {}).get("message")
                                            or "No answer from Watchtower")[:200]})
-            if reply is not None and not reply.get("success"):
-                break                                        # refused: don't try the others
-            if i < len(slots) - 1:
+            # A refused slot (typically the one whose filament is loaded in the printer)
+            # doesn't stop the others, and needs no wait since nothing is being read.
+            if results[-1]["success"] and i < len(slots) - 1:
                 listen(REREAD_GAP)                           # let the AMS finish this slot
     finally:
         try:
@@ -677,14 +677,25 @@ def reread_filament(printer):
                         for a in entry.get("assignments") or [] if a.get("slot_type") == "ams"})
         if not slots:
             return 404, {"error": "%s has no AMS slots to re-read." % printer}
-        results = reread_slots(printer, slots)
-        failed = [r for r in results if not r["success"]]
+        # The printer can't read the tag of the slot whose filament is fed into it, so that
+        # slot is left out. Its spool can't have been swapped without unloading anyway.
+        active = entry.get("active_source") or {}
+        loaded = ((active.get("system_index") or 0, active.get("slot_index"))
+                  if active.get("source_type") == "ams" else None)
+        results = reread_slots(printer, [sl for sl in slots if sl != loaded])
         with CAM_LOCK:
             CAM["queue_at"] = 0                              # next queue read is fresh
-        if failed:
-            return 502, {"error": "Slot %d: %s" % (failed[0]["tray"] + 1, failed[0]["message"]),
-                         "results": results}
-        return 200, {"ok": True, "results": results}
+        notes = []
+        if loaded in slots:
+            notes.append("Slot %d wasn't re-read because its filament is loaded in the printer."
+                         % (loaded[1] + 1))
+        for r in results:
+            if not r["success"]:
+                notes.append("Slot %d: %s" % (r["tray"] + 1, r["message"]))
+        done = sum(1 for r in results if r["success"])
+        if not done and results:
+            return 502, {"error": " ".join(notes), "results": results}
+        return 200, {"ok": True, "reread": done, "note": " ".join(notes), "results": results}
     except Exception as e:
         return 502, {"error": "Couldn't re-read filament: %s." % (getattr(e, "reason", None) or e)}
     finally:
