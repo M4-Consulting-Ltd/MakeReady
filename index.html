@@ -736,14 +736,15 @@ function renderCardFilament(name, c) {
     if (c.state !== 'printing' && c.state !== 'paused') {
       const btn = el('button', 'reload');
       btn.type = 'button';
-      btn.setAttribute('aria-label', 'Refresh loaded filament for ' + name);
-      btn.title = 'Refresh loaded filament';
+      btn.setAttribute('aria-label', 'Re-read filament on ' + name);
+      btn.title = 'Re-read filament tags';
       btn.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9" ' +
         'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' +
         '<path d="M14.6 2.6v4h-4" fill="none" stroke="currentColor" stroke-width="2" ' +
         'stroke-linecap="round" stroke-linejoin="round"/></svg>';
-      btn.classList.toggle('busy', reloading);
-      btn.addEventListener('click', reloadFilament);
+      btn.classList.toggle('busy', rereading.has(name));
+      btn.addEventListener('click', () => reloadFilament(name));
+      if (rereading.has(name)) loaded.append(' Re-reading…');
       loaded.append(btn);
     }
   }
@@ -856,19 +857,36 @@ async function refreshQueue(fresh) {
   queueBusy = false;
 }
 
-// The refresh button beside "Loaded": ask Watchtower again now for what is loaded and the
-// queue. It reads what Watchtower currently knows; it does not make the printer re-scan.
-let reloading = false;
-async function reloadFilament() {
-  if (reloading) return;
-  reloading = true;
-  for (const b of document.querySelectorAll('.reload')) b.classList.add('busy');
-  const started = Date.now();
+// The button beside "Loaded" (idle printers only): ask the printer, through Watchtower, to
+// read every AMS slot's tag again, redrawing as the readings come in. A slot takes several
+// seconds, so a full AMS takes about half a minute. If the re-read can't be done (for example
+// no Watchtower login is set), it still refreshes what Watchtower currently reports.
+const rereading = new Set();      // printer names with a re-read in progress
+async function reloadFilament(name) {
+  if (rereading.has(name)) return;
+  const c = cards.get(name);
+  rereading.add(name);
+  errors.delete(name);
+  if (c) renderCardFilament(name, c);
+  const tick = setInterval(() => refreshQueue(true), 4000);       // show slots as they update
+  let failure = '';
+  try {
+    const r = await fetch('api/printers/' + encodeURIComponent(name) + '/reread-filament',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (!r.ok) failure = (await r.json().catch(() => ({}))).error || 'Could not re-read filament.';
+  } catch (e) {
+    failure = "Can't reach the SetReady server.";
+  }
+  clearInterval(tick);
   while (queueBusy) await new Promise(r => setTimeout(r, 100));     // let a running fetch finish
   await refreshQueue(true);
-  await new Promise(r => setTimeout(r, Math.max(0, 500 - (Date.now() - started))));  // visible spin
-  reloading = false;
-  for (const b of document.querySelectorAll('.reload')) b.classList.remove('busy');
+  rereading.delete(name);
+  const now = cards.get(name);
+  if (now) {
+    if (failure) errors.set(name, { state: now.state, text: failure });
+    renderCardFilament(name, now);
+    now.el.querySelector('.msg').textContent = failure;
+  }
 }
 
 // ---- Settings: Watchtower address + API key, saved by the server ----

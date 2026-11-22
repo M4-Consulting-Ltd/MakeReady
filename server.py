@@ -30,6 +30,8 @@ written into config.json by hand:
     PAGE_PASSWORD        password for the page itself (can also be set in Settings, where
                          it is stored hashed); without one, anyone who can reach the
                          page can use it
+    REREAD_GAP           seconds to wait between AMS slots when re-reading tags (default 7;
+                         environment only)
     CONFIG_DIR           folder holding config.json (environment only; default: this folder)
 
 Python 3.8+, standard library only.
@@ -570,6 +572,126 @@ def build_queue(queue, assignments, table):
     return {"jobs": jobs, "loaded": loaded, "needs": needs}
 
 
+# ---- Re-read filament tags --------------------------------------------------------------
+# Watchtower's own page asks a Bambu printer to read an AMS slot's RFID tag again by sending
+#   printer_command {"printer_name", "command": "read_slot_rfid",
+#                    "args": {"ams_index", "tray_index"}}
+# over its Socket.IO connection, and gets printer_command_response {"success", "message"}.
+# We do the same with the logged-in session, using Socket.IO's plain-HTTP polling transport
+# so no extra library is needed. One slot at a time, with a pause for the AMS to finish.
+REREAD_GAP = float(os.environ.get("REREAD_GAP") or 7)      # seconds between slots
+REREAD_BUSY = set()                                        # printers being re-read now
+
+
+def _sio(opener, url, data=None, timeout=TIMEOUT):
+    req = urllib.request.Request(url + "&t=" + secrets.token_hex(4), data=data)
+    if data is not None:
+        req.add_header("Content-Type", "text/plain;charset=UTF-8")
+    with opener.open(req, timeout=timeout) as r:
+        return r.read().decode("utf-8", "replace")
+
+
+def reread_slots(printer, slots):
+    """Ask the printer to re-read each (ams_index, tray_index). Returns a result per slot."""
+    with CAM_LOCK:
+        opener = cam_opener()
+    base = root_url() + "/socket.io/?EIO=4&transport=polling"
+    hello = _sio(opener, base)                               # '0{"sid": ...}'
+    sid = json.loads(hello[hello.index("{"):].split("\x1e")[0])["sid"]
+    url = base + "&sid=" + urllib.parse.quote(sid)
+
+    def emit(event, payload):
+        _sio(opener, url, ("42" + json.dumps([event, payload])).encode())
+
+    def listen(seconds, want=None):
+        """Read packets for a while; return the response to `want` (a slot's command) if seen."""
+        end = time.time() + seconds
+        while time.time() < end:
+            try:
+                text = _sio(opener, url, timeout=max(1, min(8, end - time.time() + 1)))
+            except OSError:                                  # long-poll timed out: nothing new
+                continue
+            for packet in text.split("\x1e"):
+                if packet == "2":
+                    _sio(opener, url, b"3")                  # answer the server's ping
+                elif packet.startswith("44"):
+                    raise RuntimeError("Watchtower refused the live connection")
+                elif packet.startswith("42") and want:
+                    try:
+                        event, body = json.loads(packet[2:])[:2]
+                    except (ValueError, TypeError):
+                        continue
+                    if event == "printer_command_response" and isinstance(body, dict) \
+                            and body.get("printer_name") == printer \
+                            and body.get("command") == "read_slot_rfid":
+                        return body
+        return None
+
+    results = []
+    try:
+        _sio(opener, url, b"40")                             # join the default namespace
+        emit("subscribe_printer", {"printer_name": printer})
+        for i, (ams, tray) in enumerate(slots):
+            emit("printer_command", {"printer_name": printer, "command": "read_slot_rfid",
+                                     "args": {"ams_index": ams, "tray_index": tray}})
+            reply = listen(6, want=True)
+            results.append({"ams": ams, "tray": tray,
+                            "success": bool(reply and reply.get("success")),
+                            "message": str((reply or {}).get("message")
+                                           or "No answer from Watchtower")[:200]})
+            if reply is not None and not reply.get("success"):
+                break                                        # refused: don't try the others
+            if i < len(slots) - 1:
+                listen(REREAD_GAP)                           # let the AMS finish this slot
+    finally:
+        try:
+            _sio(opener, url, b"41")                         # leave politely
+        except Exception:
+            pass
+    return results
+
+
+def reread_filament(printer):
+    """(status, body) for POST /api/printers/{name}/reread-filament."""
+    if not (all(cam_creds()) and root_url()):
+        return 400, {"error": "Re-reading filament needs the Watchtower login in Settings."}
+    # Never while printing: check with the public API first.
+    status, body, _ = upstream("GET", "/printers/" + urllib.parse.quote(printer, safe=""))
+    try:
+        data = json.loads(body).get("data") or {}
+    except (ValueError, AttributeError):
+        data = {}
+    if status != 200 or not data.get("online"):
+        return 409, {"error": "%s is offline or unknown." % printer}
+    if data.get("busy"):
+        return 409, {"error": "%s is printing; filament can only be re-read when it is idle." % printer}
+    with LOCK:
+        if printer in REREAD_BUSY:
+            return 409, {"error": "%s is already re-reading its filament." % printer}
+        REREAD_BUSY.add(printer)
+    try:
+        pid = next((k for k, v in printer_table().items() if v["name"] == printer), None)
+        entry = (_unwrap(json.loads(cam_fetch("/api/filament/assignments"))).get("printers")
+                 or {}).get(pid) or {}
+        slots = sorted({(a.get("system_index") or 0, a.get("slot_index") or 0)
+                        for a in entry.get("assignments") or [] if a.get("slot_type") == "ams"})
+        if not slots:
+            return 404, {"error": "%s has no AMS slots to re-read." % printer}
+        results = reread_slots(printer, slots)
+        failed = [r for r in results if not r["success"]]
+        with CAM_LOCK:
+            CAM["queue_at"] = 0                              # next queue read is fresh
+        if failed:
+            return 502, {"error": "Slot %d: %s" % (failed[0]["tray"] + 1, failed[0]["message"]),
+                         "results": results}
+        return 200, {"ok": True, "results": results}
+    except Exception as e:
+        return 502, {"error": "Couldn't re-read filament: %s." % (getattr(e, "reason", None) or e)}
+    finally:
+        with LOCK:
+            REREAD_BUSY.discard(printer)
+
+
 def queue_data(fresh=False):
     """fresh: skip the short cache (the page's Refresh button), but not more than every 2 s."""
     if not (all(cam_creds()) and root_url()):
@@ -745,6 +867,11 @@ class Handler(BaseHTTPRequestHandler):
                 # Setting or changing the page password ends every session; keep this one.
                 self.send(200, json.dumps(public_config()).encode(),
                           cookie=session_cookie() if auth_required() else None)
+            return
+        if len(parts) == 5 and parts[:3] == ["", "api", "printers"] and parts[3] \
+                and parts[4] == "reread-filament":
+            status, out = reread_filament(urllib.parse.unquote(parts[3]))
+            self.send(status, json.dumps(out).encode())
             return
         # /api/printers/{name}/<one of COMMANDS> ; {name} arrives URL-encoded
         if len(parts) == 5 and parts[:3] == ["", "api", "printers"] and parts[3] \
