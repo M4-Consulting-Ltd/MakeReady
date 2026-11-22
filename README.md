@@ -144,11 +144,10 @@ With the Watchtower login set:
 - **On each card:** a row of colour swatches for the filament loaded in its slots. Hover
   or tap a swatch for the name, type, grams left and slot. While the printer isn't
   printing, a small button beside the swatches asks the printer to **re-read the tags**
-  of every AMS slot, for when you have swapped a spool and Watchtower still shows the
-  old one. It takes about a minute for a four-slot AMS, and the swatches update as
-  each slot is read. Only Bambu spools with a tag can be read this way. The slot whose
-  filament is currently loaded in the printer is skipped, because the printer can't read
-  that one without unloading it; the card says which slot was left out. Below it, advice
+  of the AMS slots Watchtower shows as empty, for when you have put a spool in during a
+  print and it hasn't been picked up. Each slot takes several seconds, and the swatches
+  update as it is read. Slots that already have a reading are left alone. Only Bambu
+  spools with a tag can be read this way. Below it, advice
   about the queue:
   - *Idle printer* (plate waiting, or ready): either **Set Ready can pick up a waiting
     job**, naming the oldest job its loaded filament can run, or **No waiting job can
