@@ -67,8 +67,19 @@ seconds. The settings are kept on the board and survive power cuts.
 
 **Changing things later.** Open the board's address again to change the server or
 token. Whenever the server can't be reached, the screen shows the reason with a QR code
-to that page. If the
-Wi-Fi changes or can't be joined, the board goes back to step 1 after about a minute.
+to that page.
+
+**Moving to another Wi-Fi.** On the board's page, fill in **Wi-Fi change 1: new network
+name** and **Wi-Fi change 2: new network password**, then press **Wi-Fi change 3:
+connect to new network**. The board tries the new network for 30 seconds. If it joins,
+it stays there and remembers it, and its address will probably change (the screen shows
+the new one if needed). If it can't join, it stays on the network it had; the page's
+**Wi-Fi change: result** line says which happened. If the old network is already gone,
+the board returns to step 1 after about a minute instead.
+
+**Starting up.** After power-on the screen shows a start-up page ("Connecting to
+Wi-Fi…", then "Contacting server…") until the printer appears. The setup QR codes are
+only shown if the board actually needs setting up.
 
 ## Building it yourself (optional)
 
