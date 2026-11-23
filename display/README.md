@@ -3,7 +3,7 @@
 A small touch screen for the front of one printer. It shows the printer's state, what
 filament to load for the next waiting job, and a **Set Ready** button.
 
-![Four example screens: load a filament, Set Ready picks up a job with a low-filament warning, printing, and paused](../docs/display-preview.png)
+![Four example screens: printing with time left and a progress bar, load a filament before Set Ready, Set Ready picks up a job, and the queue page](../docs/display-preview.png)
 
 *Mock-up of the layout with sample data.*
 
@@ -67,8 +67,33 @@ seconds. The settings are kept on the board and survive power cuts.
 
 **Changing things later.** Open the board's address again to change the server or
 token. Whenever the server can't be reached, the screen shows the reason with a QR code
-to that page. If the
-Wi-Fi changes or can't be joined, the board goes back to step 1 after about a minute.
+to that page.
+
+**Moving to another Wi-Fi.** On the board's page, fill in **Wi-Fi change 1: new network
+name** and **Wi-Fi change 2: new network password**, then press **Wi-Fi change 3:
+connect to new network**. The board tries the new network for 30 seconds. If it joins,
+it stays there and remembers it, and its address will probably change (the screen shows
+the new one if needed). If it can't join, it stays on the network it had; the page's
+**Wi-Fi change: result** line says which happened. If the old network is already gone,
+the board returns to step 1 after about a minute instead.
+
+**Updates.** Every six hours the board checks the release page for a newer firmware for
+its screen type. When there is one, its settings page shows **Firmware update** with the
+new version and an **Install** button; the board downloads it over Wi-Fi, shows
+"Updating firmware" and restarts, keeping its settings. Press **Firmware update
+check now** to look straight away. Switch on **Install updates automatically** on the
+same page if you would rather it just did so. This only works
+if the board can reach the internet (github.com). A board flashed before this feature
+existed has to be updated by USB once more.
+
+**Which version is it running?** The board's page has a **Firmware version** line, e.g.
+`2026.11.23-1a2b3c4 (ESP32-2432S028-7789)`: the build date, the commit it was built
+from, and the screen type. The start-up screen shows the version too. The same version
+is in the notes of the release you downloaded from.
+
+**Starting up.** After power-on the screen shows a start-up page ("Connecting to
+Wi-Fi…", then "Contacting server…") until the printer appears. The setup QR codes are
+only shown if the board actually needs setting up.
 
 ## Building it yourself (optional)
 
@@ -81,14 +106,24 @@ only making one.
 
 - **Top bar:** the printer's name and a dot: green when ready, red when printing, paused
   or waiting to be cleared, amber when offline.
-- **Status:** e.g. "Printing 26%", with time left and finish time.
-- **Advice:**
+- **While printing:** the estimated time left and the estimated completion time in
+  large type, and a bar along the bottom reading "PRINTING 28%" that fills with green
+  as the print goes on. Nothing about waiting jobs is shown while the printer is busy.
+- **Otherwise, a status line:** e.g. "Plate needs clearing" or "Paused or error".
+- **Advice, once the print is finished:**
   - "Load for next job:" with the job and the filament to load, each with a colour dot.
   - "Set Ready picks up:" with the job, when the loaded filament already covers one.
-  - "Load for waiting jobs:" on a busy printer that is the closest fit for a stuck job.
   - An amber "Low:" line when the spool has less than the job needs.
 - **Hold: Set Ready:** appears when the plate is waiting to be cleared. Hold it for a
   second; it turns brighter while held, then sends. A brush against the screen does nothing.
+
+### The queue page
+
+Swipe left or right across the screen, or tap the top bar, to see the jobs waiting for
+this printer: up to four, in Watchtower's order. Each shows its name, print time, the
+colours it needs, and a green "ready to run" or red "needs filament" depending on what
+this printer has loaded. Swipe or tap again to go back; it returns by itself after 30
+seconds. Two small dots in the top bar show which page you are on.
 
 It asks the server every 10 seconds.
 
@@ -108,13 +143,16 @@ It asks the server every 10 seconds.
 type. Flash one of the other two files listed under "Flash the board". Flashing again
 keeps the Wi-Fi, server and token already entered.
 
-**Upside down.** Build it yourself with `rotation: "270"` at the top of
-`printer-display.yaml` (the published files use 90).
+**Upside down.** The published files are built with `rotation: "270"`. For the other
+way up, build it yourself with `rotation: "90"` and both `touch_mirror_x` and
+`touch_mirror_y` set to `"false"` at the top of `printer-display.yaml`.
 
-**Touch calibration.** If the button doesn't respond where it is drawn, flip `mirror_x`
-or `mirror_y` under the touchscreen's `transform` first. For fine tuning, watch the log
-(`esphome logs printer-display.yaml`, or the **Logs** button on web.esphome.io) while pressing the corners and adjust the `calibration`
-numbers to the raw values it reports.
+**Touch calibration.** Wherever you touch the screen, a small white ring appears for a
+moment at the spot the board thinks you touched. If the ring is somewhere else, the touch
+settings need adjusting: flip `touch_mirror_x` or `touch_mirror_y` at the top of
+`printer-display.yaml` if it is mirrored. For fine tuning, the board's own page shows a
+log line for each touch with the raw values; adjust the `calibration` numbers to match
+the corners.
 
 ## Who can change a board's settings
 

@@ -996,7 +996,9 @@ def _fil_text(f):
 def display_summary(name):
     """Everything a printer's display shows, already worded and trimmed for a small screen."""
     out = {"title": name, "state": "unknown", "status": "", "sub": "", "head": "", "good": False,
-           "job": "", "fil": [], "warn": "", "button": ""}
+           "job": "", "fil": [], "warn": "", "button": "",
+           "pct": -1, "left": "", "done": "",             # progress bar and big times
+           "queue": [], "more": 0}                        # second page: waiting jobs
     printers, err = printers_cached()
     p = next((x for x in printers if x.get("name") == name), None)
     if p is None:
@@ -1005,23 +1007,35 @@ def display_summary(name):
     state = printer_state(p)
     out["state"], out["status"] = state, STATUS_TEXT[state]
     if state == "printing" and isinstance(p.get("progress"), (int, float)):
-        pct = p["progress"] * 100 if p["progress"] <= 1 else p["progress"]
-        out["status"] += " %d%%" % round(pct)
+        out["pct"] = max(0, min(100, round(p["progress"])))   # Watchtower reports 0-100
+        out["status"] += " %d%%" % out["pct"]
     mins = p.get("eta_minutes")
     if state in ("printing", "paused") and isinstance(mins, (int, float)) and mins >= 0:
         mins = round(mins)
-        out["sub"] = ("%dh %dm left" % divmod(mins, 60)) if mins >= 60 else "%dm left" % mins
+        out["left"] = ("%dh %dm" % divmod(mins, 60)) if mins >= 60 else "%dm" % mins
+        out["sub"] = out["left"] + " left"
         if state == "printing":
-            out["sub"] += time.strftime(", done %H:%M", time.localtime(time.time() + mins * 60))
+            out["done"] = time.strftime("%H:%M", time.localtime(time.time() + mins * 60))
+            out["sub"] += ", done " + out["done"]
     if state == "plate":
         out["button"] = "SET READY"
 
     q = queue_data()
+    # The jobs this printer could take, in Watchtower's order: the display's second page.
+    mine = sorted((j for j in q.get("jobs") or []
+                   if name in (j.get("missing_by") or {})
+                   and (not j.get("printer") or j["printer"] == name)),
+                  key=lambda j: (j.get("order") or 0, j.get("created") or ""))
+    for j in mine[:4]:
+        mins = j.get("minutes")
+        out["queue"].append({
+            "n": j["name"],
+            "t": ("%dh %dm" % divmod(mins, 60)) if isinstance(mins, int) and mins >= 60
+                 else ("%dm" % mins if isinstance(mins, int) else ""),
+            "ok": not j["missing_by"][name],                 # this printer has every filament
+            "c": [(f.get("color") or "").lstrip("#") for f in j["filaments"]][:4]})
+    out["more"] = max(0, len(mine) - 4)
     if state in ("plate", "ready"):
-        mine = sorted((j for j in q.get("jobs") or []
-                       if name in (j.get("missing_by") or {})
-                       and (not j.get("printer") or j["printer"] == name)),
-                      key=lambda j: (j.get("order") or 0, j.get("created") or ""))   # Watchtower's order
         runnable = [j for j in mine if not j["missing_by"][name]]
         if runnable:
             j = runnable[0]
@@ -1037,12 +1051,8 @@ def display_summary(name):
                        fil=[{"t": _fil_text(j["filaments"][i]),
                              "c": (j["filaments"][i].get("color") or "").lstrip("#")}
                             for i in j["missing_by"][name]][:4])
-    else:
-        want = (q.get("needs") or {}).get(name) or []
-        if want:
-            out.update(head="Load for waiting jobs:",
-                       fil=[{"t": _fil_text(f), "c": (f.get("color") or "").lstrip("#")}
-                            for f in want][:4])
+    # While the printer is busy the display shows nothing about waiting jobs: what to load
+    # only matters once the print is done. (The web page still shows it on busy printers.)
     # The display's font only has plain ASCII: swap the common extras, drop the rest.
     def plain(text):
         text = str(text).replace("\u2014", "-").replace("\u2013", "-").replace("\u2026", "...")
@@ -1051,6 +1061,8 @@ def display_summary(name):
         out[key] = plain(out[key])
     for f in out["fil"]:
         f["t"] = plain(f["t"])
+    for row in out["queue"]:
+        row["n"] = plain(row["n"])
     return out
 
 
