@@ -110,6 +110,8 @@ text_sensor:
 globals:
   - {id: g_setup,  type: int,         initial_value: "1"}   # 1 = needs Wi-Fi, 2 = needs server/token, 0 = set up
   - {id: g_base,   type: std::string, initial_value: '""'}  # server address, tidied
+  - {id: g_url_get,  type: std::string, initial_value: '""'}
+  - {id: g_url_post, type: std::string, initial_value: '""'}
   - {id: g_ok,     type: bool,        initial_value: "false"}
   - {id: g_error,  type: std::string, initial_value: '"Connecting..."'}
   - {id: g_title,  type: std::string, initial_value: '""'}
@@ -138,6 +140,8 @@ script:
           while (!s.empty() && s.front() == ' ') s.erase(0, 1);
           if (!s.empty() && s.find("://") == std::string::npos) s = "http://" + s;
           id(g_base) = s;
+          id(g_url_get) = s + "/api/display";
+          id(g_url_post) = s + "/api/display/set-ready";
           if (!wifi::global_wifi_component->is_connected()) id(g_setup) = 1;
           else if (s.empty() || id(cfg_token).state.empty()) id(g_setup) = 2;
           else id(g_setup) = 0;
@@ -147,7 +151,7 @@ script:
             lambda: return id(g_setup) == 0;
           then:
             - http_request.get:
-                url: !lambda return id(g_base) + "/api/display";
+                url: !lambda return id(g_url_get).c_str();
                 request_headers:
                   Authorization: !lambda return "Bearer " + id(cfg_token).state;
                 capture_response: true
@@ -172,7 +176,8 @@ script:
                           id(g_warn)   = root["warn"]   | "";
                           id(g_button) = root["button"] | "";
                           int n = 0;
-                          for (JsonObject f : root["fil"].as<JsonArray>()) {
+                          JsonArray fils = root["fil"];
+                          for (JsonObject f : fils) {
                             if (n >= 4) break;
                             id(g_fil_t)[n] = f["t"] | "";
                             const char *hex = f["c"] | "";
@@ -198,7 +203,7 @@ script:
       - globals.set: {id: g_sending, value: "true"}
       - component.update: screen
       - http_request.post:
-          url: !lambda return id(g_base) + "/api/display/set-ready";
+          url: !lambda return id(g_url_post).c_str();
           request_headers:
             Authorization: !lambda return "Bearer " + id(cfg_token).state;
             Content-Type: application/json
