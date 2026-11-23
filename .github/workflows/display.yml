@@ -32,9 +32,9 @@ jobs:
       - name: Collect the firmware
         run: |
           mkdir out
-          cp display/.esphome/build/printer-display/.pioenvs/printer-display/firmware.factory.bin \
+          cp display/.esphome/build/printer-display/build/firmware.factory.bin \
              out/printer-display.factory.bin
-          cp display/.esphome/build/printer-display/.pioenvs/printer-display/firmware.ota.bin \
+          cp display/.esphome/build/printer-display/build/firmware.ota.bin \
              out/printer-display.ota.bin
           ls -l out
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
