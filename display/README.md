@@ -134,6 +134,12 @@ only making one.
   Hold it for a second to take a Set Ready back (needs the Watchtower login in the
   SetReady page's Settings).
 
+### Dimming
+
+After five minutes without a touch the screen drops to half the brightness set on the
+board's settings page. Touch it anywhere to bring it back; that first touch only wakes
+the screen and doesn't press anything.
+
 ### The queue page
 
 Swipe left or right across the screen, or tap the top bar, to see the jobs waiting for

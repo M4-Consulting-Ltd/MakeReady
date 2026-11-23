@@ -313,6 +313,11 @@ globals:
   - {id: g_sw_y0,   type: int,        initial_value: "0"}
   - {id: g_sw_x,    type: int,        initial_value: "0"}
   - {id: g_sw_y,    type: int,        initial_value: "0"}
+  # Dimming: half brightness after five minutes without a touch; a touch brings it back.
+  - {id: g_bl,      type: float,      initial_value: "1.0"}   # brightness chosen on the settings page
+  - {id: g_dim,     type: bool,       initial_value: "false"}
+  - {id: g_wake,    type: bool,       initial_value: "false"} # this touch only woke the screen
+  - {id: g_idle_at, type: uint32_t,   initial_value: "0"}     # when the screen was last touched
 
 script:
   # Apply the "turn upside down" setting: rotate the picture half a turn and mirror the
@@ -466,6 +471,10 @@ interval:
   - interval: 1s
     then:
       - lambda: |-
+          if (!id(g_dim) && millis() - id(g_idle_at) > 5 * 60 * 1000) {
+            id(g_dim) = true;
+            id(backlight_raw).set_level(id(g_bl) * 0.5f);
+          }
           std::string n = board_name::tidy(id(cfg_name).state);
           if (n.empty()) n = App.get_name().c_str();
           board_name::apply(n, wifi::global_wifi_component->is_connected());
@@ -488,7 +497,16 @@ spi:
 output:
   - platform: ledc
     pin: GPIO21
+    id: backlight_raw
+  # The backlight goes through this so the screen can dim itself after five minutes
+  # without changing the brightness chosen on the settings page.
+  - platform: template
     id: backlight_pwm
+    type: float
+    write_action:
+      - lambda: |-
+          id(g_bl) = state;
+          id(backlight_raw).set_level(id(g_dim) ? state * 0.5f : state);
 
   # The board's RGB status light (lit when the pin is low). Held off so it doesn't glow.
   - {platform: gpio, pin: {number: GPIO4, inverted: true}, id: led_red}
@@ -794,6 +812,12 @@ touchscreen:
       mirror_y: ${touch_mirror_y}
     on_touch:
       - lambda: |-
+          id(g_idle_at) = millis();
+          if (id(g_dim)) {                 // first touch on a dimmed screen only wakes it
+            id(g_dim) = false;
+            id(g_wake) = true;
+            id(backlight_raw).set_level(id(g_bl));
+          }
           id(g_touch_x) = touch.x;
           id(g_touch_y) = touch.y;
           id(g_touch_at) = millis();
@@ -806,6 +830,7 @@ touchscreen:
     # Finger lifted: a sideways swipe, or a tap on the top bar, switches page.
     on_release:
       - lambda: |-
+          if (id(g_wake)) { id(g_wake) = false; return; }
           int dx = id(g_sw_x) - id(g_sw_x0), dy = id(g_sw_y) - id(g_sw_y0);
           bool swipe = abs(dx) > 60 && abs(dy) < 60;
           bool tap = abs(dx) < 20 && abs(dy) < 20;
@@ -857,6 +882,6 @@ binary_sensor:
     on_press:
       - if:
           condition:
-            lambda: return (!id(g_button).empty() || id(g_undo)) && !id(g_sending);
+            lambda: return (!id(g_button).empty() || id(g_undo)) && !id(g_sending) && !id(g_wake);
           then:
             - script.execute: set_ready
