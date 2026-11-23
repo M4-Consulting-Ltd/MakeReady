@@ -80,8 +80,9 @@ the board returns to step 1 after about a minute instead.
 **Updates.** Every six hours the board checks the release page for a newer firmware for
 its screen type. When there is one, its settings page shows **Firmware update** with the
 new version and an **Install** button; the board downloads it over Wi-Fi, shows
-"Updating firmware" and restarts, keeping its settings. Switch on **Install updates
-automatically** on the same page if you would rather it just did so. This only works
+"Updating firmware" and restarts, keeping its settings. Press **Firmware update
+check now** to look straight away. Switch on **Install updates automatically** on the
+same page if you would rather it just did so. This only works
 if the board can reach the internet (github.com). A board flashed before this feature
 existed has to be updated by USB once more.
 

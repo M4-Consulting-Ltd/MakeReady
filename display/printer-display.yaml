@@ -160,6 +160,12 @@ button:
   - platform: restart
     name: Apply and restart
     icon: mdi:restart
+  # Look for newer firmware now instead of waiting for the six-hourly check.
+  - platform: template
+    name: Firmware update check now
+    icon: mdi:cloud-search
+    on_press:
+      - update.check: fw_update
   # Move the board to another Wi-Fi network from its settings page: fill in the two
   # "Wi-Fi change" fields, then press this. If the new network can't be joined, the board
   # stays on the one it has.
