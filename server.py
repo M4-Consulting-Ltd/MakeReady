@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Watchtower SetReady: virtual "Set Ready" buttons for a Watchtower printer farm.
+"""MakeReady: virtual "Set Ready" buttons for a Watchtower printer farm.
 
 Serves index.html and forwards a short fixed list of calls to Watchtower's public API, so the
 API key stays on this machine and the browser has no CORS or certificate problems:
@@ -1276,7 +1276,7 @@ COMMANDS = {"set-ready": {"command": "set_ready"},
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "WatchtowerSetReady/1.0"
+    server_version = "MakeReady/1.0"
 
     def send(self, status, body, ctype="application/json", retry_after=None, cookie=None):
         self.send_response(status)
@@ -1451,7 +1451,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     host = str(CFG.get("HOST", "127.0.0.1"))
     port = int(CFG.get("PORT", 8080))
-    print("Watchtower SetReady on http://%s:%d  ->  %s"
+    print("MakeReady on http://%s:%d  ->  %s"
           % (host, port, base_url() or "(not set up: open the page and use Settings)"))
     if not auth_required() and host not in ("127.0.0.1", "localhost", "::1"):
         print("WARNING: no page password is set, so anyone who can reach this address can "

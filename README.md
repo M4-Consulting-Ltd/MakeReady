@@ -1,7 +1,11 @@
-# Watchtower-SetReady
+# MakeReady
 
 Gets each printer in a [Watchtower](https://watchtower3d.com) 3D-printer farm **ready
 for its next job**, so Watchtower can send it one.
+
+"Makeready" is the commercial printers' word for everything done to a press between one
+job and the next. (This project was called Watchtower-SetReady until November 2026; the
+repository, Docker image and download addresses still use that name.)
 
 Watchtower runs the queue: it decides which job goes to which printer and sends it.
 It can only do that once a printer has been cleared and marked ready, and has the
@@ -148,7 +152,7 @@ Confirmations, so a stray touch on a wall tablet can't move a machine or lose a 
 If Watchtower refuses a command, the reason appears under the button.
 
 The page refreshes every 5 seconds. The browser tab title shows how many plates are
-waiting, e.g. `(2) Watchtower SetReady`.
+waiting, e.g. `(2) MakeReady`.
 
 ### Cameras
 
@@ -259,8 +263,8 @@ No software to install and nothing to edit; every board runs the same firmware.
 2. **Scan the QR code** on the screen with a phone to join the board's own Wi-Fi, and
    choose your network.
 3. **Create a token** for the printer under **Settings → Printer displays** on the
-   SetReady page.
-4. **Scan the second QR code** to open the board's settings page, enter the SetReady
+   MakeReady page.
+4. **Scan the second QR code** to open the board's settings page, enter the MakeReady
    address and the token, and press **Save and restart**.
 
 Each board has its own settings page on your network, where you can also:
@@ -273,7 +277,7 @@ Each board has its own settings page on your network, where you can also:
 - turn the picture upside down, for mounting either way round;
 - dim the screen.
 
-<img src="docs/display-settings.png" alt="The board's settings page on a phone: sections for the SetReady connection, screen, Wi-Fi and firmware" width="300">
+<img src="docs/display-settings.png" alt="The board's settings page on a phone: sections for the MakeReady connection, screen, Wi-Fi and firmware" width="300">
 
 *Mock-up of a board's settings page.*
 
@@ -307,7 +311,7 @@ this as `/etc/systemd/system/watchtower-setready.service` (adjust the folder and
 
 ```ini
 [Unit]
-Description=Watchtower SetReady
+Description=MakeReady
 After=network-online.target
 Wants=network-online.target
 
