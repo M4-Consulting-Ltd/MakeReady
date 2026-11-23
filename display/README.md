@@ -35,24 +35,29 @@ board's **BOOT** button while plugging it in.
 
 ## 2. Set it up (on the board)
 
-The screen walks you through two steps.
+The screen walks you through two steps, each with a QR code to scan with your phone's
+camera, so there is nothing to type to get to the right page.
 
-**Step 1 of 2: Wi-Fi.** The screen shows a network name such as
-`printer-display-a1b2c3`. Join that network on your phone. A page opens by itself (if
-not, browse to `http://192.168.4.1`). Choose your own Wi-Fi and enter its password.
+**Step 1 of 2: Wi-Fi.** Scan the code on the screen. Your phone offers to join the
+board's own network (its name, such as `printer-display-a1b2c3`, is shown at the
+bottom). Once joined, a page opens by itself; if it doesn't, browse to
+`http://192.168.4.1`. Choose your own Wi-Fi and enter its password.
 
-**Step 2 of 2: server and token.** The screen now shows a web address such as
-`http://192.168.2.57`. Open it on a phone or computer on the same Wi-Fi and fill in:
+**Step 2 of 2: server and token.** The board joins your Wi-Fi and shows a second code.
+Put your phone back on your normal Wi-Fi and scan it to open the board's settings page
+(its address is also shown at the bottom). Fill in:
 
 - **SetReady server address:** where the SetReady page runs, e.g. `192.168.2.2:8080`.
   `http://` is added for you.
 - **Display token:** on the SetReady page, open **Settings → Printer displays**, choose
   the printer this board is for, press **Create token**, and paste it here.
 
-The board saves both and shows the printer within a few seconds. They survive power cuts.
+Then press **Apply and restart**. The board restarts and shows the printer within a few
+seconds. The settings are kept on the board and survive power cuts.
 
 **Changing things later.** Open the board's address again to change the server or
-token. The address is shown on the screen whenever the server can't be reached. If the
+token. Whenever the server can't be reached, the screen shows the reason with a QR code
+to that page. If the
 Wi-Fi changes or can't be joined, the board goes back to step 1 after about a minute.
 
 ## Building it yourself (optional)

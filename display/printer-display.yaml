@@ -87,6 +87,19 @@ text:
     on_value:
       - script.execute: fetch
 
+# "Apply and restart" on the settings page. Values are saved as they are entered; this
+# restarts the board so it comes up cleanly with them.
+button:
+  - platform: restart
+    name: Apply and restart
+    icon: mdi:restart
+
+# The setup QR code; its content is set from the screen code below.
+qr_code:
+  - id: setup_qr
+    value: "http://192.168.4.1"
+    ecc: LOW
+
 text_sensor:
   - platform: wifi_info
     ip_address:
@@ -263,36 +276,57 @@ display:
         return s;
       };
 
+      // A QR code on a white square (phones need the light border), top-left at x, y.
+      auto qr = [&](const std::string &value, int x, int y) {
+        static std::string shown;
+        if (value != shown) { id(setup_qr).set_value(value); shown = value; }
+        it.filled_rectangle(x - 8, y - 8, 132, 132, Color(255, 255, 255));
+        it.qr_code(x, y, id(setup_qr), Color(0, 0, 0), 4);
+      };
+
       // First-time setup, shown until the board has Wi-Fi, a server address and a token.
+      // Each step has a QR code, so nothing has to be typed to get to the right page.
       if (id(g_setup) == 1) {
+        std::string ap = std::string(App.get_name().c_str());
         it.filled_rectangle(0, 0, 320, 38, CARD);
-        it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, "Setup: step 1 of 2");
-        it.print(12, 52, id(f_text), TEXT, "On your phone, join the Wi-Fi");
-        it.print(12, 76, id(f_text), TEXT, "network called:");
-        it.print(12, 108, id(f_text), GREEN, fit(std::string(App.get_name().c_str()), id(f_text), 296).c_str());
-        it.print(12, 144, id(f_text), TEXT, "A page opens. Choose your");
-        it.print(12, 168, id(f_text), TEXT, "own Wi-Fi and enter its password.");
-        it.print(12, 206, id(f_small), MUTED, "Trying saved Wi-Fi first can take a minute.");
+        it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, "Setup 1 of 2: Wi-Fi");
+        qr("WIFI:S:" + ap + ";T:nopass;;", 188, 56);          // joins the board's own network
+        it.print(12, 50, id(f_text), TEXT, "Scan with your");
+        it.print(12, 72, id(f_text), TEXT, "phone's camera");
+        it.print(12, 94, id(f_text), TEXT, "to join the");
+        it.print(12, 116, id(f_text), TEXT, "board's Wi-Fi.");
+        it.print(12, 148, id(f_small), MUTED, "Then choose your");
+        it.print(12, 166, id(f_small), MUTED, "own Wi-Fi on the");
+        it.print(12, 184, id(f_small), MUTED, "page that opens.");
+        it.print(12, 214, id(f_small), GREEN, fit(ap, id(f_small), 296).c_str());
         return;
       }
       if (id(g_setup) == 2) {
         std::string url = "http://" + id(ip_addr).state;
         it.filled_rectangle(0, 0, 320, 38, CARD);
-        it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, "Setup: step 2 of 2");
-        it.print(12, 52, id(f_text), TEXT, "In a browser on the same Wi-Fi,");
-        it.print(12, 76, id(f_text), TEXT, "open:");
-        it.print(12, 108, id(f_big), GREEN, fit(url, id(f_big), 296).c_str());
-        it.print(12, 150, id(f_text), TEXT, "Enter the SetReady server");
-        it.print(12, 174, id(f_text), TEXT, "address and the display token.");
-        it.print(12, 208, id(f_small), MUTED, "Token: SetReady Settings, Printer displays");
+        it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, "Setup 2 of 2: Server");
+        qr(url, 188, 56);                                       // opens the board's settings page
+        it.print(12, 50, id(f_text), TEXT, "Scan to open");
+        it.print(12, 72, id(f_text), TEXT, "this board's");
+        it.print(12, 94, id(f_text), TEXT, "settings.");
+        it.print(12, 126, id(f_small), MUTED, "Enter the server");
+        it.print(12, 144, id(f_small), MUTED, "address and token,");
+        it.print(12, 162, id(f_small), MUTED, "then press Apply");
+        it.print(12, 180, id(f_small), MUTED, "and restart.");
+        it.print(12, 214, id(f_small), GREEN, fit(url, id(f_small), 296).c_str());
         return;
       }
       if (!id(g_ok)) {
-        it.print(160, 80, id(f_big), TEXT, TextAlign::CENTER, "Watchtower SetReady");
-        it.print(160, 120, id(f_text), AMBER, TextAlign::CENTER, id(g_error).c_str());
-        it.print(160, 160, id(f_small), MUTED, TextAlign::CENTER, fit(id(g_base), id(f_small), 300).c_str());
-        it.print(160, 184, id(f_small), MUTED, TextAlign::CENTER,
-                 ("Change settings at http://" + id(ip_addr).state).c_str());
+        std::string url = "http://" + id(ip_addr).state;
+        it.filled_rectangle(0, 0, 320, 38, CARD);
+        it.print(12, 19, id(f_big), AMBER, TextAlign::CENTER_LEFT, fit(id(g_error), id(f_big), 296).c_str());
+        qr(url, 188, 56);                                       // the board's settings page
+        it.print(12, 50, id(f_text), TEXT, "Scan to check");
+        it.print(12, 72, id(f_text), TEXT, "this board's");
+        it.print(12, 94, id(f_text), TEXT, "settings.");
+        it.print(12, 126, id(f_small), MUTED, "Server:");
+        it.print(12, 144, id(f_small), MUTED, fit(id(g_base), id(f_small), 164).c_str());
+        it.print(12, 214, id(f_small), GREEN, fit(url, id(f_small), 296).c_str());
         return;
       }
 
