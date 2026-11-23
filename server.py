@@ -566,7 +566,10 @@ def build_queue(queue, assignments, table):
                      "printer": assigned, "ready": ready, "best": best, "filaments": fils,
                      "exact": exact, "model": model,
                      # per printer of the right model: which filaments (by index) it lacks
-                     "missing_by": missing, "short_by": short, "order": len(jobs),
+                     "missing_by": missing, "short_by": short,
+                     # position in Watchtower's queue (its ORDER column), top first
+                     "order": j["sort_order"] if isinstance(j.get("sort_order"), (int, float))
+                     else len(jobs),
                      "created": str(j.get("created_at") or ""),
                      "copies": md.get("quantity_remaining"),
                      "minutes": round(md["print_time_seconds"] / 60)
@@ -866,7 +869,7 @@ def printer_state(p):
 def _fil_text(f):
     text = " ".join(x for x in (f.get("name"), f.get("type"), f.get("variant")) if x) or "Filament"
     grams = f.get("grams")
-    if isinstance(grams, (int, float)):
+    if isinstance(grams, (int, float)) and grams > 0:
         text += " %sg" % ("<1" if 0 < grams < 1 else round(grams))
     return text
 
@@ -899,7 +902,7 @@ def display_summary(name):
         mine = sorted((j for j in q.get("jobs") or []
                        if name in (j.get("missing_by") or {})
                        and (not j.get("printer") or j["printer"] == name)),
-                      key=lambda j: (j.get("created") or "", j.get("order") or 0))
+                      key=lambda j: (j.get("order") or 0, j.get("created") or ""))   # Watchtower's order
         runnable = [j for j in mine if not j["missing_by"][name]]
         if runnable:
             j = runnable[0]
@@ -910,7 +913,7 @@ def display_summary(name):
                 f = j["filaments"][short[0]["i"]]
                 out["warn"] = "Low: %s, %dg left" % (_fil_text(f), short[0]["have"])
         elif mine:
-            j = min(mine, key=lambda x: len(x["missing_by"][name]))    # closest, oldest on a tie
+            j = mine[0]                                   # the job highest in the queue
             out.update(head="Load for next job:", job=j["name"],
                        fil=[{"t": _fil_text(j["filaments"][i]),
                              "c": (j["filaments"][i].get("color") or "").lstrip("#")}

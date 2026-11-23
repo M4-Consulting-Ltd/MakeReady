@@ -7,8 +7,8 @@ filament to load for the next waiting job, and a **Set Ready** button.
 
 *Mock-up of the layout with sample data.*
 
-**Status: untested on real hardware.** The firmware is built automatically, so it is
-known to compile, but it has not yet been run on a board. Treat the first flash as the test.
+**Status:** running on a real two-socket board (ST7789 screen): flashing, both setup
+steps and the printer screen work. The touch button has not been tried yet.
 
 ## What you need
 
@@ -33,7 +33,7 @@ its Wi-Fi, server and token after it starts.
    | File | Screen | Usually found on |
    |---|---|---|
    | `printer-display.factory.bin` | ILI9341 | boards with a single micro-USB port |
-   | `printer-display-st7789.factory.bin` | ST7789 | boards with micro-USB and USB-C |
+   | `printer-display-st7789.factory.bin` | ST7789 | boards with micro-USB and USB-C (confirmed on one) |
    | `printer-display-ili9342.factory.bin` | ILI9342 | some boards with micro-USB and USB-C |
 
 2. Plug the board into the computer and open <https://web.esphome.io> in Chrome or Edge.
@@ -56,7 +56,8 @@ bottom). Once joined, a page opens by itself; if it doesn't, browse to
 Put your phone back on your normal Wi-Fi and scan it to open the board's settings page
 (its address is also shown at the bottom). Fill in:
 
-- **SetReady server address:** where the SetReady page runs, e.g. `192.168.2.2:8080`.
+- **SetReady page address:** where the SetReady page runs (what is in your browser's
+  address bar when you open it), e.g. `192.168.2.2:8080`. Not Watchtower's address.
   `http://` is added for you.
 - **Display token:** on the SetReady page, open **Settings → Printer displays**, choose
   the printer this board is for, press **Create token**, and paste it here.
@@ -97,6 +98,7 @@ It asks the server every 10 seconds.
 |---|---|
 | Stuck on "Setup: step 1 of 2" | Wrong Wi-Fi password, or a 5 GHz-only network; join the board's network again and re-enter |
 | "Can't reach server" | Wrong server address or port (it is shown underneath), or the server isn't reachable from Wi-Fi |
+| "Not a SetReady server" | The address is something else, most often Watchtower itself; enter the SetReady page's address and port |
 | "Token not accepted" | Token mistyped, or revoked in Settings; create a new one and enter it on the board's page |
 | "Not found in Watchtower" | The printer was renamed; create a new token |
 | Scrambled picture, or inverted colours | The firmware is for a different screen type; see below |
