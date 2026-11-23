@@ -94,13 +94,11 @@ only making one.
   or waiting to be cleared, amber when offline.
 - **While printing:** the estimated time left and the estimated completion time in
   large type, and a bar along the bottom reading "PRINTING 28%" that fills with green
-  as the print goes on. If there is filament to load for a waiting job, the times shrink
-  to one line to make room for it.
+  as the print goes on. Nothing about waiting jobs is shown while the printer is busy.
 - **Otherwise, a status line:** e.g. "Plate needs clearing" or "Paused or error".
-- **Advice:**
+- **Advice, once the print is finished:**
   - "Load for next job:" with the job and the filament to load, each with a colour dot.
   - "Set Ready picks up:" with the job, when the loaded filament already covers one.
-  - "Load for waiting jobs:" on a busy printer that is the closest fit for a stuck job.
   - An amber "Low:" line when the spool has less than the job needs.
 - **Hold: Set Ready:** appears when the plate is waiting to be cleared. Hold it for a
   second; it turns brighter while held, then sends. A brush against the screen does nothing.
