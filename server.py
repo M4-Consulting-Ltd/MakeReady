@@ -396,25 +396,46 @@ QUEUE_PATH = ("/api/queue?status=queued&status=waiting_filament&status=assigned"
 SENDING_PATH = "/api/queue?status=dispatching&limit=50"
 
 
+def _progress(src, loose=False):
+    """A 0-100 progress figure from a job (or its metadata), if it carries one."""
+    for key, value in (src or {}).items():
+        k = str(key).lower()
+        if (("progress" in k or "percent" in k)
+                and (loose or any(w in k for w in ("upload", "dispatch", "transfer", "send")))
+                and isinstance(value, (int, float)) and not isinstance(value, bool)
+                and 0 <= value <= 100):
+            return round(value)
+    return None
+
+
 def sending_jobs(queue, table):
-    """{printer name: {"name": job, "pct": 0-100 or None}} for jobs being sent to a printer."""
+    """{printer name: {"name": job, "pct": 0-100 or None}} for jobs being sent to a printer.
+
+    Watchtower's queue reply has a "dispatching" list beside "jobs"; jobs can also carry
+    the status "dispatching". Both are read, since neither has been seen filled in.
+    """
     out = {}
-    for j in queue.get("jobs") or []:
-        if str(j.get("status") or "").lower() != "dispatching" or not j.get("printer_id"):
-            continue
-        md = j.get("metadata") or {}
-        who = str(j["printer_id"])
-        who = (table.get(who) or {}).get("name") or who
-        pct = None
-        for src in (j, md):                      # a progress figure, if Watchtower gives one
-            for key, value in src.items():
-                k = str(key).lower()
-                if (("progress" in k or "percent" in k)
-                        and any(w in k for w in ("upload", "dispatch", "transfer", "send"))
-                        and isinstance(value, (int, float)) and not isinstance(value, bool)
-                        and 0 <= value <= 100):
-                    pct = round(value)
+
+    def add(j, loose):
+        md = j.get("metadata") if isinstance(j.get("metadata"), dict) else {}
+        who = j.get("printer_name") or j.get("printer_id") or j.get("printer")
+        if not who:
+            return
+        who = (table.get(str(who)) or {}).get("name") or str(who)
+        pct = _progress(j, loose)
+        if pct is None:
+            pct = _progress(md, loose)
         out[who] = {"name": _job_name(j, md), "pct": pct}
+
+    by_id = {j.get("id"): j for j in queue.get("jobs") or [] if isinstance(j, dict)}
+    for item in queue.get("dispatching") or []:
+        if isinstance(item, dict):
+            add({**(by_id.get(item.get("job_id") or item.get("id")) or {}), **item}, True)
+        elif item in by_id:
+            add(by_id[item], False)
+    for j in queue.get("jobs") or []:
+        if isinstance(j, dict) and str(j.get("status") or "").lower() == "dispatching":
+            add(j, False)
     return out
 
 
@@ -708,6 +729,8 @@ def build_queue(queue, assignments, table):
                     needs[best["printer"]].append(want)
         jobs.append({"id": j.get("id"), "name": _job_name(j, md), "status": j.get("status"),
                      "printer": assigned, "ready": ready, "best": best, "filaments": fils,
+                     # soft = Watchtower's own pick, which it may move to another printer
+                     "soft": j.get("assignment_type") == "soft",
                      "exact": exact, "model": model,
                      # per printer of the right model: which filaments (by index) it lacks
                      "missing_by": missing, "short_by": short,
@@ -942,9 +965,10 @@ def queue_data(fresh=False):
                           assignments if isinstance(assignments, dict) else {}, printer_table())
         out.update(enabled=True, error="", sending={})
         try:                                     # extra: never let this break the queue view
+            out["sending"] = sending_jobs(queue if isinstance(queue, dict) else {}, printer_table())
             sending = _unwrap(json.loads(cam_fetch(SENDING_PATH)))
             if isinstance(sending, dict):
-                out["sending"] = sending_jobs(sending, printer_table())
+                out["sending"].update(sending_jobs(sending, printer_table()))
         except Exception:
             pass
     except Exception as e:
@@ -1101,7 +1125,8 @@ def display_summary(name):
            "pct": -1, "left": "", "done": "",             # progress bar and big times
            "bar": "",                                     # wording for the bar, when not printing
            "undo": False,                                 # offer "Not ready" (takes Set Ready back)
-           "queue": [], "more": 0}                        # second page: waiting jobs
+           "queue": [], "more": 0,                        # second page: waiting jobs
+           "jobs": [], "jmore": 0}                        # the same, longer, with each job's filaments
     printers, err = printers_cached()
     p = next((x for x in printers if x.get("name") == name), None)
     if p is None:
@@ -1138,6 +1163,33 @@ def display_summary(name):
             "ok": not j["missing_by"][name],                 # this printer has every filament
             "c": [(f.get("color") or "").lstrip("#") for f in j["filaments"]][:4]})
     out["more"] = max(0, len(mine) - 4)
+    # Newer displays list more jobs and open one to show its filaments: what the job
+    # needs, and whether this printer has each one loaded.
+    # This list is wider than the advice above: every waiting job for this printer's
+    # model that could still end up here. That is queued jobs, jobs assigned to this
+    # printer, and jobs soft-assigned to another one (Watchtower may move those once the
+    # right filament is loaded here). Jobs fixed to another printer are left out.
+    wide = sorted((j for j in q.get("jobs") or []
+                   if name in (j.get("missing_by") or {})
+                   and (not j.get("printer") or j["printer"] == name or j.get("soft"))),
+                  key=lambda j: (j.get("order") or 0, j.get("created") or ""))
+    for j in wide[:8]:
+        mins = j.get("minutes")
+        lacking = j["missing_by"][name]
+        out["jobs"].append({
+            # where the job stands: "Queued", "Assigned here", "Soft: P1S-3"
+            "a": "Queued" if not j.get("printer")
+                 else ("Soft: here" if j.get("soft") else "Assigned here") if j["printer"] == name
+                 else "Soft: %s" % j["printer"],
+            "n": j["name"][:60],
+            "t": ("%dh %dm" % divmod(mins, 60)) if isinstance(mins, int) and mins >= 60
+                 else ("%dm" % mins if isinstance(mins, int) else ""),
+            "ok": not lacking,
+            "c": [(f.get("color") or "").lstrip("#") for f in j["filaments"]][:4],
+            "f": [{"t": _fil_text(f)[:40], "ok": i not in lacking}
+                  for i, f in enumerate(j["filaments"])][:4],
+            "x": max(0, len(j["filaments"]) - 4)})          # filaments that didn't fit
+    out["jmore"] = max(0, len(wide) - 8)
     if state in ("plate", "ready"):
         runnable = [j for j in mine if not j["missing_by"][name]]
         if runnable:
@@ -1173,8 +1225,16 @@ def display_summary(name):
         out[key] = plain(out[key])
     for f in out["fil"]:
         f["t"] = plain(f["t"])
-    for row in out["queue"]:
+    for row in out["queue"] + out["jobs"]:
         row["n"] = plain(row["n"])
+        if "a" in row:
+            row["a"] = plain(row["a"])
+        for f in row.get("f") or []:
+            f["t"] = plain(f["t"])
+    # The display reads at most 6 KB: drop jobs off the end of the long list if need be.
+    while out["jobs"] and len(json.dumps(out)) > 5500:
+        out["jobs"].pop()
+        out["jmore"] += 1
     return out
 
 
