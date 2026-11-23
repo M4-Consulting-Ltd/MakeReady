@@ -1,0 +1,56 @@
+name: Display firmware
+
+# Builds the printer-display firmware (display/printer-display.yaml) with ESPHome.
+# On pull requests it only checks that it compiles. On main it also publishes the
+# ready-to-flash file to the "display-latest" release.
+on:
+  pull_request:
+    paths: [display/**, .github/workflows/display.yml]
+  push:
+    branches: [main]
+    paths: [display/**, .github/workflows/display.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Actions are pinned to commit hashes so a moved tag can't change what builds the firmware.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # only used by the release step, which runs on main
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.12"
+      - name: Install ESPHome
+        run: pip install esphome==2026.11.0
+      - name: Compile
+        run: esphome compile display/printer-display.yaml
+      - name: Collect the firmware
+        run: |
+          mkdir out
+          cp display/.esphome/build/printer-display/.pioenvs/printer-display/firmware.factory.bin \
+             out/printer-display.factory.bin
+          cp display/.esphome/build/printer-display/.pioenvs/printer-display/firmware.ota.bin \
+             out/printer-display.ota.bin
+          ls -l out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: printer-display-firmware
+          path: out/
+      - name: Publish to the display-latest release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="Printer display firmware built from ${GITHUB_SHA}. Flash printer-display.factory.bin over USB; see display/README.md."
+          if gh release view display-latest >/dev/null 2>&1; then
+            gh release upload display-latest out/* --clobber
+            gh release edit display-latest --notes "$notes"
+          else
+            gh release create display-latest out/* --title "Printer display firmware" \
+              --notes "$notes" --prerelease --target "$GITHUB_SHA"
+          fi
