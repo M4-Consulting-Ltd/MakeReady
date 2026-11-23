@@ -41,6 +41,8 @@ esphome:
     name: m4consulting.printer-display
     version: "${version}"
   name_add_mac_suffix: true            # one firmware for every board, unique names
+  includes:
+    - board-name.h                     # changing the name on the network
   on_boot:
     priority: -100
     then:
@@ -77,6 +79,8 @@ wifi:
   on_disconnect:
     - script.execute: fetch
 
+mdns:
+
 improv_serial:                         # lets the browser flasher set Wi-Fi over USB too
 
 captive_portal:
@@ -109,6 +113,16 @@ text:
     initial_value: "${default_server}"
     on_value:
       - script.execute: fetch
+  # The board's name on the network. Blank = the built-in printer-display-xxxxxx.
+  - platform: template
+    id: cfg_name
+    name: Board name on the network
+    icon: mdi:tag-text
+    mode: text
+    optimistic: true
+    restore_value: true
+    max_length: 31
+    initial_value: ""
   - platform: template
     id: cfg_token
     name: Display token
@@ -227,6 +241,9 @@ text_sensor:
     scan_results:
       name: Wi-Fi networks nearby          # what the settings page offers to move to
   - platform: template
+    id: name_in_use
+    name: Network name in use
+  - platform: template
     id: wifi_change
     name: "Wi-Fi change: result"
   # Which firmware this board is running, and for which screen type.
@@ -253,6 +270,7 @@ globals:
   - {id: g_left,   type: std::string, initial_value: '""'}   # e.g. "8h 51m"
   - {id: g_done,   type: std::string, initial_value: '""'}   # e.g. "18:57"
   - {id: g_pct,    type: int,         initial_value: "-1"}   # print progress, -1 = unknown
+  - {id: g_bar,    type: std::string, initial_value: '""'}   # bar wording when not printing, e.g. "RECEIVING 92%"
   - {id: g_touch_x, type: int,        initial_value: "0"}    # last touch, to show where it landed
   - {id: g_touch_y, type: int,        initial_value: "0"}
   - {id: g_touch_at, type: uint32_t,  initial_value: "0"}
@@ -347,6 +365,7 @@ script:
                           id(g_left)   = root["left"]   | "";
                           id(g_done)   = root["done"]   | "";
                           id(g_pct)    = root["pct"]    | -1;
+                          id(g_bar)    = root["bar"]    | "";
                           id(g_head)   = root["head"]   | "";
                           id(g_good)   = root["good"]   | false;
                           id(g_job)    = root["job"]    | "";
@@ -409,6 +428,14 @@ script:
       - script.execute: fetch
 
 interval:
+  # Keep the chosen name on the network in place (see board-name.h).
+  - interval: 1s
+    then:
+      - lambda: |-
+          std::string n = board_name::tidy(id(cfg_name).state);
+          if (n.empty()) n = App.get_name().c_str();
+          board_name::apply(n, wifi::global_wifi_component->is_connected());
+          if (id(name_in_use).state != n) id(name_in_use).publish_state(n);
   - interval: ${refresh}
     then:
       - script.execute: fetch
@@ -597,8 +624,6 @@ display:
         if (id(g_q_more) > 0)
           it.print(160, 44 + id(g_q_n) * 44 + 1, id(f_small), MUTED, TextAlign::TOP_CENTER,
                    ("+" + std::to_string(id(g_q_more)) + " more").c_str());
-        if (id(g_touch_at) != 0 && millis() - id(g_touch_at) < 1500)
-          it.circle(id(g_touch_x), id(g_touch_y), 10, Color(255, 255, 255));
         return;
       }
 
@@ -611,6 +636,7 @@ display:
       pager(0);
 
       bool printing = st == "printing";
+      bool bar = !id(g_bar).empty();        // a job is being sent to the printer
       bool advice = !id(g_head).empty();
       int y = 96;
 
@@ -641,7 +667,7 @@ display:
         y += 22;
       }
       bool button = !id(g_button).empty();
-      int bottom = (button || printing) ? 182 : 236;
+      int bottom = (button || printing || bar) ? 182 : 236;
       for (int i = 0; advice && i < id(g_fil_n) && y + 20 <= bottom; i++) {
         uint32_t c = id(g_fil_c)[i];
         it.filled_circle(22, y + 10, 9, Color((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF));
@@ -659,19 +685,15 @@ display:
         it.filled_rectangle(10, 186, 300, 48, id(g_sending) ? MUTED : held ? GREEN : GO);
         it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER,
                  id(g_sending) ? "Sending..." : held ? "Keep holding..." : "Hold: Set Ready");
-      } else if (printing) {
+      } else if (printing || bar) {
         int pct = id(g_pct) < 0 ? 0 : id(g_pct) > 100 ? 100 : id(g_pct);
         it.filled_rectangle(10, 186, 300, 48, CARD);
         if (pct > 0) it.filled_rectangle(10, 186, 300 * pct / 100, 48, GO);
         it.rectangle(10, 186, 300, 48, GO);
-        std::string label = id(g_pct) < 0 ? std::string("PRINTING") : "PRINTING " + std::to_string(pct) + "%";
+        std::string label = bar ? id(g_bar)
+                          : id(g_pct) < 0 ? std::string("PRINTING") : "PRINTING " + std::to_string(pct) + "%";
         it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER, label.c_str());
       }
-
-      // A ring where the screen was last touched, for a moment, so a touch that lands in
-      // the wrong place is obvious.
-      if (id(g_touch_at) != 0 && millis() - id(g_touch_at) < 1500)
-        it.circle(id(g_touch_x), id(g_touch_y), 10, Color(255, 255, 255));
 
 touchscreen:
   - platform: xpt2046

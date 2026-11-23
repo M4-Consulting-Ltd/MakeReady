@@ -77,6 +77,14 @@ address will probably change (the screen shows the new one if needed). If it can
 it stays on the network it had, and the page says so. If the old network is already
 gone, the board returns to step 1 after about a minute instead.
 
+**Renaming the board.** Each board calls itself `printer-display-` plus six characters
+of its own. To give it a name you will recognise in your router's device list, type one
+under **This board's name on the network** in the **Wi-Fi** section (letters, numbers
+and hyphens, e.g. `p1s-4-display`) and press **Save name and restart**. The board is
+then also reachable as `http://p1s-4-display.local` where your network supports that.
+Leave the box blank to go back to the built-in name. The setup hotspot keeps the
+built-in name.
+
 **Updates.** Every six hours the board checks the release page for a newer firmware for
 its screen type. The **Firmware** section of its page shows the result, with an
 **Install update** button when there is one; the board downloads it over Wi-Fi, shows
@@ -153,12 +161,10 @@ keeps the Wi-Fi, server and token already entered.
 **Turn the picture upside down**. The picture turns half a turn straight away, touch follows it, and the board
 remembers the choice, so it can be mounted with the USB sockets on either side.
 
-**Touch calibration.** Wherever you touch the screen, a small white ring appears for a
-moment at the spot the board thinks you touched. If the ring is somewhere else, the touch
-settings need adjusting: change `touch_mirror_x` or `touch_mirror_y` at the top of
-`printer-display.yaml` if it is mirrored. For fine tuning, the board's own page shows a
-log line for each touch with the raw values; adjust the `calibration` numbers to match
-the corners.
+**Touch calibration.** If touches land in the wrong place, change `touch_mirror_x` or
+`touch_mirror_y` at the top of `printer-display.yaml` if it is mirrored. For fine
+tuning, the log on the board's own page shows a line for each touch with the raw
+values; adjust the `calibration` numbers to match the corners.
 
 ## Who can change a board's settings
 
