@@ -161,12 +161,10 @@ keeps the Wi-Fi, server and token already entered.
 **Turn the picture upside down**. The picture turns half a turn straight away, touch follows it, and the board
 remembers the choice, so it can be mounted with the USB sockets on either side.
 
-**Touch calibration.** Wherever you touch the screen, a small white ring appears for a
-moment at the spot the board thinks you touched. If the ring is somewhere else, the touch
-settings need adjusting: change `touch_mirror_x` or `touch_mirror_y` at the top of
-`printer-display.yaml` if it is mirrored. For fine tuning, the board's own page shows a
-log line for each touch with the raw values; adjust the `calibration` numbers to match
-the corners.
+**Touch calibration.** If touches land in the wrong place, change `touch_mirror_x` or
+`touch_mirror_y` at the top of `printer-display.yaml` if it is mirrored. For fine
+tuning, the log on the board's own page shows a line for each touch with the raw
+values; adjust the `calibration` numbers to match the corners.
 
 ## Who can change a board's settings
 
