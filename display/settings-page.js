@@ -7,6 +7,8 @@
 const NAME = {
   server: 'SetReady page address (not Watchtower)',
   token: 'Display token',
+  name: 'Board name on the network',
+  nameInUse: 'Network name in use',
   apply: 'Apply and restart',
   backlight: 'Backlight',
   flip: 'Screen: turn upside down',
@@ -134,6 +136,12 @@ function build() {
     <label>Password <input type="password" id="net-pass" autocomplete="off"></label>
     <div class="btns"><button id="net-go">Connect</button></div>
     <p class="note" id="net-note"></p>
+    <label style="margin-top:18px">This board's name on the network
+      <input type="text" id="name" maxlength="31" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <small id="name-hint">Letters, numbers and hyphens, e.g. p1s-4-display. What your router lists the board as.</small>
+    </label>
+    <div class="btns"><button id="name-go">Save name and restart</button></div>
+    <p class="note" id="name-note"></p>
   </section>
 
   <section class="card">
@@ -154,7 +162,7 @@ function build() {
   <details><summary>Log</summary><pre id="log"></pre></details>
 </div>`;
 
-  for (const id of ['server', 'token', 'net-pass', 'net-other']) $(id).addEventListener('input', () => dirty.add(id));
+  for (const id of ['server', 'token', 'net-pass', 'net-other', 'name']) $(id).addEventListener('input', () => dirty.add(id));
 
   $('save').addEventListener('click', async () => {
     const note = $('save-note');
@@ -198,6 +206,23 @@ function build() {
     } catch { note.className = 'note bad'; note.textContent = "Couldn't reach the board."; }
   });
 
+  $('name-go').addEventListener('click', async () => {
+    const note = $('name-note');
+    const name = $('name').value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 31);
+    $('name').value = name;
+    $('name-go').disabled = true;
+    note.className = 'note'; note.textContent = 'Saving…';
+    try {
+      await post('text', NAME.name, 'set', { value: name });
+      await new Promise(r => setTimeout(r, 600));          // let the board store it
+      await post('button', NAME.apply, 'press');
+      dirty.delete('name');
+      note.className = 'note good';
+      note.textContent = name ? 'Saved. The board is restarting as ' + name + '…' : 'Saved. The board is restarting with its built-in name…';
+    } catch { note.className = 'note bad'; note.textContent = "Couldn't reach the board."; }
+    setTimeout(() => { $('name-go').disabled = false; }, 8000);
+  });
+
   $('check').addEventListener('click', () => {
     $('update').textContent = 'Checking…';
     post('button', NAME.check, 'press');
@@ -226,6 +251,14 @@ function render() {
     if (v !== undefined && !dirty.has(id) && document.activeElement !== $(id)) $(id).value = v;
   };
   text(NAME.server, 'server');
+  text(NAME.name, 'name');
+  const inUse = get('text_sensor', NAME.nameInUse).value;
+  if (inUse) {
+    $('name').placeholder = inUse;
+    document.title = inUse;
+    $('name-hint').textContent = 'Letters, numbers and hyphens, e.g. p1s-4-display. What your router lists the board as. ' +
+      'Now: ' + inUse + ' (also http://' + inUse + '.local). Leave blank for the built-in name.';
+  }
 
   const ip = get('text_sensor', NAME.ip).value, ssid = get('text_sensor', NAME.ssid).value;
   $('where').textContent = [ip, ssid && 'on ' + ssid].filter(Boolean).join(' ') || 'Connected';
