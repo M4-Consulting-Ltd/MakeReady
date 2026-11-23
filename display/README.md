@@ -17,7 +17,7 @@ steps and the printer screen work. The touch button has not been tried yet.
   display, but the Set Ready button can't be pressed.
 - A micro-USB **data** cable and a computer with Chrome or Edge, for the one-off flash.
 - A phone, for the setup steps.
-- The SetReady server reachable from your Wi-Fi (2.4 GHz), with the Watchtower login set
+- The MakeReady server reachable from your Wi-Fi (2.4 GHz), with the Watchtower login set
   in Settings if you want the filament advice.
 
 Every board runs the same firmware. Nothing is edited per printer; each board is told
@@ -56,10 +56,10 @@ bottom). Once joined, a page opens by itself; if it doesn't, browse to
 Put your phone back on your normal Wi-Fi and scan it to open the board's settings page
 (its address is also shown at the bottom). Fill in:
 
-- **SetReady page address:** where the SetReady page runs (what is in your browser's
+- **MakeReady page address:** where the MakeReady page runs (what is in your browser's
   address bar when you open it), e.g. `192.168.2.2:8080`. Not Watchtower's address.
   `http://` is added for you.
-- **Display token:** on the SetReady page, open **Settings → Printer displays**, choose
+- **Display token:** on the MakeReady page, open **Settings → Printer displays**, choose
   the printer this board is for, press **Create token**, and paste it here.
 
 Then press **Save and restart**. The board restarts and shows the printer within a few
@@ -94,9 +94,9 @@ its screen type. The **Firmware** section of its page shows the result, with an
 only works if the board can reach the internet (github.com). A board flashed before
 this feature existed has to be updated by USB once more.
 
-**Do updates keep the settings?** Yes: the Wi-Fi, SetReady address, token and screen
+**Do updates keep the settings?** Yes: the Wi-Fi, MakeReady address, token and screen
 options stay on the board through an update. (One exception has already happened: the
-update that renamed the address field to "SetReady page address" lost the saved
+update that renamed the address field to "MakeReady page address" lost the saved
 address, which has to be typed in once more. The settings keep their internal names
 from now on, so this won't recur.)
 
@@ -132,7 +132,13 @@ only making one.
   second; it turns brighter while held, then sends. A brush against the screen does nothing.
 - **Hold: Not ready:** an outlined button on a ready printer, until a job is sent to it.
   Hold it for a second to take a Set Ready back (needs the Watchtower login in the
-  SetReady page's Settings).
+  MakeReady page's Settings).
+
+### Dimming
+
+After five minutes without a touch the screen drops to half the brightness set on the
+board's settings page. Touch it anywhere to bring it back; that first touch only wakes
+the screen and doesn't press anything.
 
 ### The queue page
 
@@ -166,7 +172,7 @@ It asks the server every 10 seconds.
 |---|---|
 | Stuck on "Setup: step 1 of 2" | Wrong Wi-Fi password, or a 5 GHz-only network; join the board's network again and re-enter |
 | "Can't reach server" | Wrong server address or port (it is shown underneath), or the server isn't reachable from Wi-Fi |
-| "Not a SetReady server" | The address is something else, most often Watchtower itself; enter the SetReady page's address and port |
+| "Not a MakeReady server" | The address is something else, most often Watchtower itself; enter the MakeReady page's address and port |
 | "Token not accepted" | Token mistyped, or revoked in Settings; create a new one and enter it on the board's page |
 | "Not found in Watchtower" | The printer was renamed; create a new token |
 | Scrambled picture, or inverted colours | The firmware is for a different screen type; see below |

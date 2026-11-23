@@ -1,10 +1,27 @@
-# Watchtower-SetReady
+# MakeReady
 
-A control page for a [Watchtower](https://watchtower3d.com) 3D-printer farm. It started
-as virtual **Set Ready** buttons, doing the job of the
+Gets each printer in a [Watchtower](https://watchtower3d.com) 3D-printer farm **ready
+for its next job**, so Watchtower can send it one.
+
+"Makeready" is the commercial printers' word for everything done to a press between one
+job and the next. (This project was called Watchtower-SetReady until November 2026; the
+repository, Docker image and download addresses still use that name.)
+
+Watchtower runs the queue: it decides which job goes to which printer and sends it.
+It can only do that once a printer has been cleared and marked ready, and has the
+filament the job needs. That is the part done by a person at the machine, and the part
+this project is for. It tells you, printer by printer:
+
+- when the plate needs clearing, with a **Set Ready** button to press once it is clear
+  (and **Not ready** to take that back);
+- which filament to load so a waiting job can run there;
+- whether the spool has enough left for the job Set Ready would pick up.
+
+It doesn't queue, slice or dispatch anything itself.
+
+It started as virtual Set Ready buttons, doing the job of the
 [ClearCue](https://github.com/ThePrintBench/ClearCue) hardware buttons without buying or
-building any, and now shows the whole farm on one screen. Open it on a phone, a tablet
-or a wall-mounted display.
+building any. Open it on a phone, a tablet or a wall-mounted display.
 
 For each printer it shows:
 
@@ -34,7 +51,7 @@ with or endorsed by Watchtower.
 - [Settings](#settings)
 - [Using the page](#using-the-page)
 - [Printer displays](#printer-displays)
-- [Docker and Unraid](#docker-and-unraid)
+- [Running it permanently](#running-it-permanently)
 - [Security](#security)
 - [How it works](#how-it-works)
 - [Limitations](#limitations)
@@ -42,8 +59,9 @@ with or endorsed by Watchtower.
 
 ## Quick start
 
-Needs Python 3.8 or later and nothing else. For Docker or Unraid, see
-[below](#docker-and-unraid).
+Needs Python 3.8 or later and nothing else: no packages to install. It runs the same on
+Linux, macOS and Windows. To keep it running, as a service or in Docker, see
+[below](#running-it-permanently).
 
 1. In Watchtower, create an API key (starts with `wt_`) with the `control` scope,
    allowed to send `set_ready` and, for the other buttons, `resume`, `pause` and `cancel`.
@@ -134,7 +152,7 @@ Confirmations, so a stray touch on a wall tablet can't move a machine or lose a 
 If Watchtower refuses a command, the reason appears under the button.
 
 The page refreshes every 5 seconds. The browser tab title shows how many plates are
-waiting, e.g. `(2) Watchtower SetReady`.
+waiting, e.g. `(2) MakeReady`.
 
 ### Cameras
 
@@ -206,7 +224,7 @@ Light and dark themes follow the device setting.
 A small touch screen for the front of each printer, one per printer, so whoever is
 standing at the machine can see what it needs without opening the page.
 
-![Six display screens: starting up, Wi-Fi setup with a QR code, printing with time left and a progress bar, finished with a filament to load, finished and ready for the next job, and the queue page](docs/display-screens.png)
+![Nine display screens: starting up, Wi-Fi setup with a QR code, printing with time left and a progress bar, finished with a filament to load, finished with a job to pick up, ready with a Not ready button, receiving a job, the job list, and one job's filaments](docs/display-screens.png)
 
 *Mock-up of the screens with sample data.*
 
@@ -245,18 +263,23 @@ No software to install and nothing to edit; every board runs the same firmware.
 2. **Scan the QR code** on the screen with a phone to join the board's own Wi-Fi, and
    choose your network.
 3. **Create a token** for the printer under **Settings → Printer displays** on the
-   SetReady page.
-4. **Scan the second QR code** to open the board's settings page, enter the SetReady
+   MakeReady page.
+4. **Scan the second QR code** to open the board's settings page, enter the MakeReady
    address and the token, and press **Save and restart**.
 
 Each board has its own settings page on your network, where you can also:
 
-- move it to another Wi-Fi network;
+- move it to another Wi-Fi network, picked from a list of those nearby;
+- give it a name you will recognise on your network;
 - see which firmware version it is running;
 - check for a newer version, and install it over Wi-Fi, by hand or automatically;
 - upload a firmware file directly;
 - turn the picture upside down, for mounting either way round;
 - dim the screen.
+
+<img src="docs/display-settings.png" alt="The board's settings page on a phone: sections for the MakeReady connection, screen, Wi-Fi and firmware" width="300">
+
+*Mock-up of a board's settings page.*
 
 Full instructions, troubleshooting and how to build the firmware yourself are in
 [display/README.md](display/README.md).
@@ -275,7 +298,43 @@ Running on real two-socket boards with the ST7789 screen: flashing, on-screen se
 the printer screens and live data all work. The touch button, the swipe to the queue
 page and the over-Wi-Fi update have been built but not yet confirmed on hardware.
 
-## Docker and Unraid
+## Running it permanently
+
+Either way works; pick whichever suits the machine. Both keep their settings in one
+`config.json`.
+
+### Without Docker
+
+Copy `server.py` and `index.html` to a folder on any always-on machine with Python 3.8
+or later, and start `server.py` when the machine starts. On Linux with systemd, save
+this as `/etc/systemd/system/watchtower-setready.service` (adjust the folder and user):
+
+```ini
+[Unit]
+Description=MakeReady
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/watchtower-setready
+ExecStart=/usr/bin/python3 /opt/watchtower-setready/server.py
+Environment=HOST=0.0.0.0
+Environment=PORT=8080
+User=setready
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then `sudo systemctl enable --now watchtower-setready`. The user needs to be able to
+write to the folder, since `config.json` is saved there (or set `CONFIG_DIR` to another
+folder). To update, replace the two files and `sudo systemctl restart watchtower-setready`.
+
+On Windows, run `python server.py` from Task Scheduler with the trigger "At startup";
+on macOS, from a launchd agent.
+
+### Docker
 
 The image listens on port 8080 and keeps `config.json` in `/config`.
 
@@ -285,28 +344,27 @@ docker run -d --name watchtower-setready --restart unless-stopped \
   ghcr.io/m4-consulting-ltd/watchtower-setready:latest
 ```
 
+Or with Docker Compose:
+
+```yaml
+services:
+  watchtower-setready:
+    image: ghcr.io/m4-consulting-ltd/watchtower-setready:latest
+    restart: unless-stopped
+    ports:
+      - "8090:8080"
+    volumes:
+      - ./settings:/config
+```
+
+The page is then at `http://<host>:8090`. Open it, fill in Settings and set a page
+password. To update, pull the new image and recreate the container
+(`docker compose pull && docker compose up -d`); settings are kept, since they live in
+the mounted folder.
+
 The image is built and pushed to GitHub's container registry by
 `.github/workflows/docker.yml` on every change to `main`. To build it yourself instead,
 run `docker build -t watchtower-setready .` in this folder.
-
-### Unraid
-
-1. Copy `unraid/watchtower-setready.xml` to the flash drive as
-   `/boot/config/plugins/dockerMan/templates-user/my-watchtower-setready.xml`
-   (over the network that is the `flash` share, folder
-   `config/plugins/dockerMan/templates-user`).
-2. In Unraid: **Docker → Add Container → Template → watchtower-setready**, check the
-   port (default 8090) and settings folder (default
-   `/mnt/user/appdata/watchtower-setready`), then **Apply**.
-3. Open the container's **WebUI**, fill in Settings and set a page password.
-
-On a custom network such as `br0` the container has its own IP address and Unraid
-ignores the port mapping: the page is at `http://<container-ip>:8080`. To use another
-port there, add a `PORT` variable to the container.
-
-To update: **Docker → Check for Updates**, then update the container. If it reports
-"up-to-date" straight after a new build, edit the container and **Apply** without
-changes to force a fresh pull. Settings are kept, since they live in the settings folder.
 
 ## Security
 
