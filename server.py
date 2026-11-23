@@ -416,6 +416,16 @@ def sending_jobs(queue, table):
     """
     out = {}
 
+    def title(j, md):
+        """The job's name wherever this entry keeps it, or "" if it has none."""
+        for src in (md, j):
+            for key in ("original_filename", "display_name", "job_name", "filename",
+                        "file_name", "gcode_filename", "subtask_name", "name", "title", "file"):
+                if isinstance(src.get(key), str) and src[key].strip():
+                    return _job_name({"name": os.path.basename(src[key].strip())},
+                                     md if key == "original_filename" else {})
+        return ""
+
     def add(j, loose):
         md = j.get("metadata") if isinstance(j.get("metadata"), dict) else {}
         who = j.get("printer_name") or j.get("printer_id") or j.get("printer")
@@ -425,18 +435,32 @@ def sending_jobs(queue, table):
         pct = _progress(j, loose)
         if pct is None:
             pct = _progress(md, loose)
-        out[who] = {"name": _job_name(j, md), "pct": pct}
+        old = out.get(who) or {}
+        out[who] = {"name": title(j, md) or old.get("name") or "",
+                    "pct": pct if pct is not None else old.get("pct")}
 
-    by_id = {j.get("id"): j for j in queue.get("jobs") or [] if isinstance(j, dict)}
+    by_id = {str(j.get("id")): j for j in queue.get("jobs") or [] if isinstance(j, dict)}
     for item in queue.get("dispatching") or []:
         if isinstance(item, dict):
-            add({**(by_id.get(item.get("job_id") or item.get("id")) or {}), **item}, True)
-        elif item in by_id:
-            add(by_id[item], False)
+            keys = tuple(sorted(str(k) for k in item))
+            if keys not in SENDING_SEEN:             # once per shape: helps if a name is missing
+                SENDING_SEEN.add(keys)
+                print("Watchtower 'dispatching' entry has fields: %s" % ", ".join(keys),
+                      file=sys.stderr)
+            known = next((by_id[str(item[k])] for k in ("job_id", "queue_job_id", "queue_id", "id")
+                          if item.get(k) is not None and str(item[k]) in by_id), {})
+            add({**known, **item, "metadata": {
+                **(known.get("metadata") if isinstance(known.get("metadata"), dict) else {}),
+                **(item.get("metadata") if isinstance(item.get("metadata"), dict) else {})}}, True)
+        elif str(item) in by_id:
+            add(by_id[str(item)], False)
     for j in queue.get("jobs") or []:
         if isinstance(j, dict) and str(j.get("status") or "").lower() == "dispatching":
             add(j, False)
     return out
+
+
+SENDING_SEEN = set()
 
 
 def _unwrap(reply):
@@ -965,10 +989,15 @@ def queue_data(fresh=False):
                           assignments if isinstance(assignments, dict) else {}, printer_table())
         out.update(enabled=True, error="", sending={})
         try:                                     # extra: never let this break the queue view
-            out["sending"] = sending_jobs(queue if isinstance(queue, dict) else {}, printer_table())
+            main = queue if isinstance(queue, dict) else {}
             sending = _unwrap(json.loads(cam_fetch(SENDING_PATH)))
-            if isinstance(sending, dict):
-                out["sending"].update(sending_jobs(sending, printer_table()))
+            sending = sending if isinstance(sending, dict) else {}
+            # One pass over both replies, so an entry that only carries a job id can
+            # find its name among the jobs of either.
+            out["sending"] = sending_jobs({
+                "jobs": (main.get("jobs") or []) + (sending.get("jobs") or []),
+                "dispatching": (main.get("dispatching") or []) + (sending.get("dispatching") or [])},
+                printer_table())
         except Exception:
             pass
     except Exception as e:

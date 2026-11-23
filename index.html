@@ -790,7 +790,7 @@ function renderCardFilament(name, c) {
   if (got) {
     // Watchtower is sending a job to this printer: nothing to do but wait.
     needs.append(el('b', 'good', 'Receiving a job' + (got.pct == null ? '…' : ' ' + got.pct + '%')),
-                 el('div', '', got.name));
+                 el('div', '', got.name || ''));
     const bar = el('div', 'recv');
     const fill = el('i', got.pct == null ? 'busy' : '');
     if (got.pct != null) fill.style.width = got.pct + '%';
