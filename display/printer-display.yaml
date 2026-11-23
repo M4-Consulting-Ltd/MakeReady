@@ -90,7 +90,12 @@ json:
 # The board's own settings page (http://<its address>): server address and token.
 web_server:
   port: 80
-  local: true                          # works without internet access
+  # The page is our own (settings-page.js), served from the board itself, so it works
+  # without internet access. The two empty URLs switch off ESPHome's stock interface.
+  js_include: settings-page.js
+  js_url: ""
+  css_url: ""
+  local: false
 
 text:
   - platform: template
@@ -219,6 +224,8 @@ text_sensor:
       name: IP address
     ssid:
       name: Wi-Fi network in use
+    scan_results:
+      name: Wi-Fi networks nearby          # what the settings page offers to move to
   - platform: template
     id: wifi_change
     name: "Wi-Fi change: result"

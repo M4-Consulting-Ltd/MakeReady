@@ -247,7 +247,7 @@ No software to install and nothing to edit; every board runs the same firmware.
 3. **Create a token** for the printer under **Settings → Printer displays** on the
    SetReady page.
 4. **Scan the second QR code** to open the board's settings page, enter the SetReady
-   address and the token, and press **Apply and restart**.
+   address and the token, and press **Save and restart**.
 
 Each board has its own settings page on your network, where you can also:
 
