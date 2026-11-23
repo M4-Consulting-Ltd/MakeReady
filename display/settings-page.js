@@ -1,4 +1,4 @@
-// Settings page for a Watchtower SetReady printer display.
+// Settings page for a MakeReady printer display.
 //
 // The board serves this file as its own web page (see web_server in printer-display.yaml).
 // It talks to the board's built-in web API: live values arrive on /events, and changes are
@@ -105,14 +105,14 @@ function build() {
   <div class="offline" id="offline">Lost contact with the board. Trying again…</div>
 
   <section class="card">
-    <h2>SetReady connection</h2>
-    <label>SetReady page address
+    <h2>MakeReady connection</h2>
+    <label>MakeReady page address
       <input type="text" id="server" placeholder="192.168.1.10:8080" autocomplete="off" autocapitalize="none" spellcheck="false">
-      <small>Where the SetReady page runs, as in your browser's address bar. Not Watchtower's address.</small>
+      <small>Where the MakeReady page runs, as in your browser's address bar. Not Watchtower's address.</small>
     </label>
     <label>Display token
       <input type="password" id="token" placeholder="Leave blank to keep the current token" autocomplete="off">
-      <small>From the SetReady page: Settings → Printer displays → Create token.</small>
+      <small>From the MakeReady page: Settings → Printer displays → Create token.</small>
     </label>
     <div class="btns"><button class="primary" id="save">Save and restart</button></div>
     <p class="note" id="save-note"></p>
@@ -167,7 +167,7 @@ function build() {
   $('save').addEventListener('click', async () => {
     const note = $('save-note');
     const server = $('server').value.trim(), token = $('token').value.trim();
-    if (!server) { note.className = 'note bad'; note.textContent = 'Enter the SetReady page address.'; return; }
+    if (!server) { note.className = 'note bad'; note.textContent = 'Enter the MakeReady page address.'; return; }
     $('save').disabled = true;
     note.className = 'note'; note.textContent = 'Saving…';
     try {
