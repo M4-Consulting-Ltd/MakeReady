@@ -169,8 +169,9 @@ Jobs with everything loaded have a green edge, the others a red one. **Hide jobs
 filament loaded** leaves only the ones that need attention; the choice is remembered per
 device.
 
-Colours are shown as swatches, with the spool's colour name when that exact spool is
-loaded somewhere on the farm.
+Colours are shown as swatches with a name. The name comes from, in order: a matching
+spool loaded on the farm, a matching spool in Watchtower's inventory, Bambu Lab's colour
+chart, or failing those a plain description such as "Orange" or "Dark grey".
 
 The matching is this page's own estimate, not Watchtower's scheduler:
 
