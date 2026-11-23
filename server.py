@@ -1101,7 +1101,8 @@ def display_summary(name):
            "pct": -1, "left": "", "done": "",             # progress bar and big times
            "bar": "",                                     # wording for the bar, when not printing
            "undo": False,                                 # offer "Not ready" (takes Set Ready back)
-           "queue": [], "more": 0}                        # second page: waiting jobs
+           "queue": [], "more": 0,                        # second page: waiting jobs
+           "jobs": [], "jmore": 0}                        # the same, longer, with each job's filaments
     printers, err = printers_cached()
     p = next((x for x in printers if x.get("name") == name), None)
     if p is None:
@@ -1138,6 +1139,21 @@ def display_summary(name):
             "ok": not j["missing_by"][name],                 # this printer has every filament
             "c": [(f.get("color") or "").lstrip("#") for f in j["filaments"]][:4]})
     out["more"] = max(0, len(mine) - 4)
+    # Newer displays list more jobs and open one to show its filaments: what the job
+    # needs, and whether this printer has each one loaded.
+    for j in mine[:8]:
+        mins = j.get("minutes")
+        lacking = j["missing_by"][name]
+        out["jobs"].append({
+            "n": j["name"][:60],
+            "t": ("%dh %dm" % divmod(mins, 60)) if isinstance(mins, int) and mins >= 60
+                 else ("%dm" % mins if isinstance(mins, int) else ""),
+            "ok": not lacking,
+            "c": [(f.get("color") or "").lstrip("#") for f in j["filaments"]][:4],
+            "f": [{"t": _fil_text(f)[:40], "ok": i not in lacking}
+                  for i, f in enumerate(j["filaments"])][:4],
+            "x": max(0, len(j["filaments"]) - 4)})          # filaments that didn't fit
+    out["jmore"] = max(0, len(mine) - 8)
     if state in ("plate", "ready"):
         runnable = [j for j in mine if not j["missing_by"][name]]
         if runnable:
@@ -1173,8 +1189,14 @@ def display_summary(name):
         out[key] = plain(out[key])
     for f in out["fil"]:
         f["t"] = plain(f["t"])
-    for row in out["queue"]:
+    for row in out["queue"] + out["jobs"]:
         row["n"] = plain(row["n"])
+        for f in row.get("f") or []:
+            f["t"] = plain(f["t"])
+    # The display reads at most 6 KB: drop jobs off the end of the long list if need be.
+    while out["jobs"] and len(json.dumps(out)) > 5500:
+        out["jobs"].pop()
+        out["jmore"] += 1
     return out
 
 
