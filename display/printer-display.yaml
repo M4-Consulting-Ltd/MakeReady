@@ -16,6 +16,10 @@ substitutions:
   device_name: printer-display        # each board adds its own suffix, e.g. printer-display-a1b2c3
   refresh: 10s                         # how often to ask the server
   version: "dev"                       # set by the build to a date and commit, e.g. 2026.11.23-1a2b3c4
+  # Where the board looks for newer firmware: the published file list for its screen type.
+  # file_suffix is "", "-st7789" or "-ili9342" and is set by the build.
+  file_suffix: ""
+  update_url: https://github.com/M4-Consulting-Ltd/Watchtower-SetReady/releases/download/display-latest
   # Screen type. These boards ship with one of three screens that look the same:
   #   ESP32-2432S028       ILI9341  (usually the single micro-USB board)
   #   ESP32-2432S028-7789  ST7789   (usually the micro-USB + USB-C board)
@@ -32,6 +36,9 @@ substitutions:
 esphome:
   name: ${device_name}
   friendly_name: Printer display
+  project:                             # the version the update check compares against
+    name: m4consulting.printer-display
+    version: "${version}"
   name_add_mac_suffix: true            # one firmware for every board, unique names
   on_boot:
     priority: -100
@@ -50,6 +57,13 @@ logger:
 
 ota:
   - platform: esphome
+  # Updates fetched by the board itself (see "update" below).
+  - platform: http_request
+    on_begin:
+      - globals.set: {id: g_updating, value: "true"}
+      - component.update: screen
+    on_error:
+      - globals.set: {id: g_updating, value: "false"}
 
 # No Wi-Fi details are built in. Until it has some (or if they stop working) the board
 # runs its own network, named after the device, and a phone that joins it is shown a
@@ -66,7 +80,7 @@ improv_serial:                         # lets the browser flasher set Wi-Fi over
 captive_portal:
 
 http_request:
-  verify_ssl: false                    # the SetReady page is plain http on the LAN
+  verify_ssl: true                     # for the firmware download; the SetReady page is plain http
   timeout: 8s
 
 json:
@@ -114,6 +128,31 @@ text:
     mode: password
     optimistic: true
     max_length: 64
+
+# Self-update. Every six hours the board reads the published file list for its screen
+# type and compares versions. The settings page shows "Firmware update" with an Install
+# button when there is a newer one; with "Install updates automatically" switched on, the
+# board installs it by itself and restarts.
+update:
+  - platform: http_request
+    id: fw_update
+    name: Firmware update
+    source: ${update_url}/printer-display${file_suffix}.manifest.json
+    update_interval: 6h
+    on_update_available:
+      - if:
+          condition:
+            switch.is_on: auto_update
+          then:
+            - update.perform: fw_update
+
+switch:
+  - platform: template
+    id: auto_update
+    name: Install updates automatically
+    icon: mdi:update
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
 
 # "Apply and restart" on the settings page. Values are saved as they are entered; this
 # restarts the board so it comes up cleanly with them.
@@ -199,6 +238,7 @@ globals:
   - {id: g_fil_t,  type: "std::array<std::string, 4>"}
   - {id: g_fil_c,  type: "std::array<uint32_t, 4>"}
   - {id: g_sending, type: bool,       initial_value: "false"}
+  - {id: g_updating, type: bool,      initial_value: "false"}   # an update is being installed
   # Second page: the jobs waiting for this printer.
   - {id: g_page,    type: int,        initial_value: "0"}     # 0 = printer, 1 = queue
   - {id: g_page_at, type: uint32_t,   initial_value: "0"}     # when the queue page was opened
@@ -414,6 +454,13 @@ display:
         stage = wifi::global_wifi_component->is_ap_active() ? 1 : 3;
       else if (stage == 0 && !id(g_ok) && id(g_error).empty())
         stage = 3;                                             // on Wi-Fi, no reply yet
+
+      if (id(g_updating)) {
+        it.print(160, 96, id(f_big), TEXT, TextAlign::CENTER, "Updating firmware");
+        it.print(160, 134, id(f_text), GREEN, TextAlign::CENTER, "Please leave it plugged in");
+        it.print(160, 170, id(f_small), MUTED, TextAlign::CENTER, "It restarts by itself when done");
+        return;
+      }
 
       // Boot screen: shown while joining Wi-Fi and until the server first answers. The setup
       // QR codes only appear if the board really does need setting up.
