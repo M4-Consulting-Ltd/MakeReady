@@ -1,10 +1,23 @@
 # Watchtower-SetReady
 
-A control page for a [Watchtower](https://watchtower3d.com) 3D-printer farm. It started
-as virtual **Set Ready** buttons, doing the job of the
+Gets each printer in a [Watchtower](https://watchtower3d.com) 3D-printer farm **ready
+for its next job**, so Watchtower can send it one.
+
+Watchtower runs the queue: it decides which job goes to which printer and sends it.
+It can only do that once a printer has been cleared and marked ready, and has the
+filament the job needs. That is the part done by a person at the machine, and the part
+this project is for. It tells you, printer by printer:
+
+- when the plate needs clearing, with a **Set Ready** button to press once it is clear
+  (and **Not ready** to take that back);
+- which filament to load so a waiting job can run there;
+- whether the spool has enough left for the job Set Ready would pick up.
+
+It doesn't queue, slice or dispatch anything itself.
+
+It started as virtual Set Ready buttons, doing the job of the
 [ClearCue](https://github.com/ThePrintBench/ClearCue) hardware buttons without buying or
-building any, and now shows the whole farm on one screen. Open it on a phone, a tablet
-or a wall-mounted display.
+building any. Open it on a phone, a tablet or a wall-mounted display.
 
 For each printer it shows:
 
