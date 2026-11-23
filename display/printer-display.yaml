@@ -1,4 +1,4 @@
-# Watchtower SetReady printer display
+# MakeReady printer display
 #
 # A small touch screen for the front of one printer. It shows the printer's state, what
 # filament to load for the next waiting job, and a Set Ready button (hold to press).
@@ -8,7 +8,7 @@
 #
 # Nothing needs editing. After flashing, the board sets itself up:
 #   1. It starts its own Wi-Fi network; join it from a phone and choose your Wi-Fi.
-#   2. The screen then shows a web address; open it and enter the SetReady server's
+#   2. The screen then shows a web address; open it and enter the MakeReady server's
 #      address and the display token.
 # See README.md in this folder for the full steps.
 
@@ -86,7 +86,7 @@ improv_serial:                         # lets the browser flasher set Wi-Fi over
 captive_portal:
 
 http_request:
-  verify_ssl: true                     # for the firmware download; the SetReady page is plain http
+  verify_ssl: true                     # for the firmware download; the MakeReady page is plain http
   timeout: 8s
   # GitHub's download links answer with a redirect whose headers run to several thousand
   # characters; with the default 512 the update check fails before it starts.
@@ -367,12 +367,12 @@ script:
                     - lambda: |-
                         if (response->status_code != 200) {
                           id(g_ok) = false;
-                          // SetReady's own refusal mentions the display token. Anything else
+                          // MakeReady's own refusal mentions the display token. Anything else
                           // answering (Watchtower itself, a router page) is the wrong address.
                           if (response->status_code == 401 && body.find("display token") != std::string::npos)
                             id(g_error) = "Token not accepted";
                           else if (response->status_code == 401 || response->status_code == 404)
-                            id(g_error) = "Not a SetReady server";
+                            id(g_error) = "Not a MakeReady server";
                           else
                             id(g_error) = std::string("Server error ") + std::to_string(response->status_code);
                           return;
@@ -585,7 +585,7 @@ display:
       // QR codes only appear if the board really does need setting up.
       if (stage == 3) {
         bool online = wifi::global_wifi_component->is_connected();
-        it.print(160, 84, id(f_big), TEXT, TextAlign::CENTER, "Watchtower SetReady");
+        it.print(160, 84, id(f_big), TEXT, TextAlign::CENTER, "MakeReady");
         it.print(160, 116, id(f_text), MUTED, TextAlign::CENTER, "Printer display");
         it.print(160, 164, id(f_text), GREEN, TextAlign::CENTER,
                  online ? "Contacting server..." : "Connecting to Wi-Fi...");
@@ -618,7 +618,7 @@ display:
         it.print(12, 50, id(f_text), TEXT, "Scan to open");
         it.print(12, 72, id(f_text), TEXT, "this board's");
         it.print(12, 94, id(f_text), TEXT, "settings.");
-        it.print(12, 126, id(f_small), MUTED, "Enter the SetReady");
+        it.print(12, 126, id(f_small), MUTED, "Enter the MakeReady");
         it.print(12, 144, id(f_small), MUTED, "address and token,");
         it.print(12, 162, id(f_small), MUTED, "then press Apply");
         it.print(12, 180, id(f_small), MUTED, "and restart.");
