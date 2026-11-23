@@ -301,6 +301,7 @@ globals:
   - {id: g_q_ncol,  type: "std::array<int, 8>"}
   - {id: g_q_col,   type: "std::array<std::array<uint32_t, 4>, 8>"}
   # Each job's filaments, for the page a tap on a job opens.
+  - {id: g_q_tag,   type: "std::array<std::string, 8>"}        # "Queued", "Assigned here", "Soft: P1S-3"
   - {id: g_q_fn,    type: "std::array<int, 8>"}
   - {id: g_q_fx,    type: "std::array<int, 8>"}                # filaments beyond the four shown
   - {id: g_q_ft,    type: "std::array<std::array<std::string, 4>, 8>"}
@@ -406,6 +407,7 @@ script:
                             id(g_q_name)[q] = j["n"] | "";
                             id(g_q_time)[q] = j["t"] | "";
                             id(g_q_ok)[q] = j["ok"] | false;
+                            id(g_q_tag)[q] = j["a"] | "";
                             int k = 0;
                             JsonArray cols = j["c"];
                             for (JsonVariant c : cols) {
@@ -642,8 +644,10 @@ display:
           bool ok = id(g_q_ok)[s];
           it.print(12, 44, id(f_text), TEXT, fit(id(g_q_name)[s], id(f_text), 296).c_str());
           std::string line = ok ? "Ready to run here" : "Needs filament loading";
-          if (!id(g_q_time)[s].empty()) line += "  -  " + id(g_q_time)[s];
           it.print(12, 68, id(f_small), ok ? GREEN : RED, line.c_str());
+          std::string where = id(g_q_tag)[s];
+          if (!id(g_q_time)[s].empty()) where += (where.empty() ? "" : "  ") + id(g_q_time)[s];
+          it.print(312, 68, id(f_small), MUTED, TextAlign::TOP_RIGHT, where.c_str());
           if (id(g_q_fn)[s] == 0)
             it.print(12, 100, id(f_small), MUTED, "No filament details for this job");
           for (int k = 0; k < id(g_q_fn)[s]; k++) {
@@ -679,6 +683,7 @@ display:
             it.circle(23 + k * 18, y + 32, 6, MUTED);
           }
           it.print(100, y + 23, id(f_small), edge, id(g_q_ok)[i] ? "ready to run" : "needs filament");
+          it.print(312, y + 23, id(f_small), MUTED, TextAlign::TOP_RIGHT, id(g_q_tag)[i].c_str());
         }
         int total = id(g_q_n) + id(g_q_more);
         if (id(g_q_n) > 4) {
