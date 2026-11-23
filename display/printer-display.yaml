@@ -6,21 +6,27 @@
 # Board: ESP32-2432S028 / ESP32-2432S028R ("Cheap Yellow Display"), 2.8" 320x240,
 #        the single micro-USB version with an ILI9341 screen.
 #
-# Fill in the five values below, then flash with ESPHome:
-#     esphome run printer-display.yaml
+# Nothing needs editing. After flashing, the board sets itself up:
+#   1. It starts its own Wi-Fi network; join it from a phone and choose your Wi-Fi.
+#   2. The screen then shows a web address; open it and enter the SetReady server's
+#      address and the display token.
 # See README.md in this folder for the full steps.
 
 substitutions:
-  device_name: printer-display        # unique per screen: letters, digits and hyphens
-  wifi_ssid: "YOUR WIFI NAME"          # 2.4 GHz network
-  wifi_password: "YOUR WIFI PASSWORD"
-  server: "http://192.168.1.10:8080"  # address of the SetReady page, no trailing slash
-  token: "PASTE THE DISPLAY TOKEN"    # Settings -> Printer displays -> Create token
+  device_name: printer-display        # each board adds its own suffix, e.g. printer-display-a1b2c3
   refresh: 10s                         # how often to ask the server
+  # Optional: bake values in at build time instead of entering them on the board.
+  default_server: ""
+  default_token: ""
 
 esphome:
   name: ${device_name}
-  friendly_name: ${device_name}
+  friendly_name: Printer display
+  name_add_mac_suffix: true            # one firmware for every board, unique names
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: fetch
 
 esp32:
   board: esp32dev
@@ -32,11 +38,17 @@ logger:
 ota:
   - platform: esphome
 
+# No Wi-Fi details are built in. Until it has some (or if they stop working) the board
+# runs its own network, named after the device, and a phone that joins it is shown a
+# page to pick the real Wi-Fi.
 wifi:
-  ssid: ${wifi_ssid}
-  password: ${wifi_password}
-  ap:                                  # fallback network if Wi-Fi can't be joined
-    ssid: ${device_name}
+  ap: {}
+  on_connect:
+    - script.execute: fetch
+  on_disconnect:
+    - script.execute: fetch
+
+improv_serial:                         # lets the browser flasher set Wi-Fi over USB too
 
 captive_portal:
 
@@ -46,8 +58,45 @@ http_request:
 
 json:
 
+# The board's own settings page (http://<its address>): server address and token.
+web_server:
+  port: 80
+  local: true                          # works without internet access
+
+text:
+  - platform: template
+    id: cfg_server
+    name: SetReady server address
+    icon: mdi:server
+    mode: text
+    optimistic: true
+    restore_value: true
+    max_length: 100
+    initial_value: "${default_server}"
+    on_value:
+      - script.execute: fetch
+  - platform: template
+    id: cfg_token
+    name: Display token
+    icon: mdi:key
+    mode: password
+    optimistic: true
+    restore_value: true
+    max_length: 80
+    initial_value: "${default_token}"
+    on_value:
+      - script.execute: fetch
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      id: ip_addr
+      name: IP address
+
 # What the server last told us to show.
 globals:
+  - {id: g_setup,  type: int,         initial_value: "1"}   # 1 = needs Wi-Fi, 2 = needs server/token, 0 = set up
+  - {id: g_base,   type: std::string, initial_value: '""'}  # server address, tidied
   - {id: g_ok,     type: bool,        initial_value: "false"}
   - {id: g_error,  type: std::string, initial_value: '"Connecting..."'}
   - {id: g_title,  type: std::string, initial_value: '""'}
@@ -66,16 +115,28 @@ globals:
 
 script:
   - id: fetch
-    mode: single
+    mode: restart
     then:
+      # Work out where we are in setup, and tidy the server address:
+      # "192.168.2.2:8080" and "http://192.168.2.2:8080/" both become "http://192.168.2.2:8080".
+      - lambda: |-
+          std::string s = id(cfg_server).state;
+          while (!s.empty() && (s.back() == '/' || s.back() == ' ')) s.pop_back();
+          while (!s.empty() && s.front() == ' ') s.erase(0, 1);
+          if (!s.empty() && s.find("://") == std::string::npos) s = "http://" + s;
+          id(g_base) = s;
+          if (!wifi::global_wifi_component->is_connected()) id(g_setup) = 1;
+          else if (s.empty() || id(cfg_token).state.empty()) id(g_setup) = 2;
+          else id(g_setup) = 0;
+      - component.update: screen
       - if:
           condition:
-            wifi.connected:
+            lambda: return id(g_setup) == 0;
           then:
             - http_request.get:
-                url: ${server}/api/display
+                url: !lambda return id(g_base) + "/api/display";
                 request_headers:
-                  Authorization: Bearer ${token}
+                  Authorization: !lambda return "Bearer " + id(cfg_token).state;
                 capture_response: true
                 max_response_buffer_size: 4096
                 on_response:
@@ -117,11 +178,6 @@ script:
                         id(g_ok) = false;
                         id(g_error) = "Can't reach server";
                     - component.update: screen
-          else:
-            - lambda: |-
-                id(g_ok) = false;
-                id(g_error) = "No Wi-Fi";
-            - component.update: screen
 
   - id: set_ready
     mode: single
@@ -129,9 +185,9 @@ script:
       - globals.set: {id: g_sending, value: "true"}
       - component.update: screen
       - http_request.post:
-          url: ${server}/api/display/set-ready
+          url: !lambda return id(g_base) + "/api/display/set-ready";
           request_headers:
-            Authorization: Bearer ${token}
+            Authorization: !lambda return "Bearer " + id(cfg_token).state;
             Content-Type: application/json
           body: "{}"
       - delay: 1500ms                  # give Watchtower a beat
@@ -207,9 +263,36 @@ display:
         return s;
       };
 
+      // First-time setup, shown until the board has Wi-Fi, a server address and a token.
+      if (id(g_setup) == 1) {
+        it.filled_rectangle(0, 0, 320, 38, CARD);
+        it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, "Setup: step 1 of 2");
+        it.print(12, 52, id(f_text), TEXT, "On your phone, join the Wi-Fi");
+        it.print(12, 76, id(f_text), TEXT, "network called:");
+        it.print(12, 108, id(f_text), GREEN, fit(std::string(App.get_name().c_str()), id(f_text), 296).c_str());
+        it.print(12, 144, id(f_text), TEXT, "A page opens. Choose your");
+        it.print(12, 168, id(f_text), TEXT, "own Wi-Fi and enter its password.");
+        it.print(12, 206, id(f_small), MUTED, "Trying saved Wi-Fi first can take a minute.");
+        return;
+      }
+      if (id(g_setup) == 2) {
+        std::string url = "http://" + id(ip_addr).state;
+        it.filled_rectangle(0, 0, 320, 38, CARD);
+        it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, "Setup: step 2 of 2");
+        it.print(12, 52, id(f_text), TEXT, "In a browser on the same Wi-Fi,");
+        it.print(12, 76, id(f_text), TEXT, "open:");
+        it.print(12, 108, id(f_big), GREEN, fit(url, id(f_big), 296).c_str());
+        it.print(12, 150, id(f_text), TEXT, "Enter the SetReady server");
+        it.print(12, 174, id(f_text), TEXT, "address and the display token.");
+        it.print(12, 208, id(f_small), MUTED, "Token: SetReady Settings, Printer displays");
+        return;
+      }
       if (!id(g_ok)) {
-        it.print(160, 100, id(f_big), TEXT, TextAlign::CENTER, "Watchtower SetReady");
-        it.print(160, 140, id(f_text), AMBER, TextAlign::CENTER, id(g_error).c_str());
+        it.print(160, 80, id(f_big), TEXT, TextAlign::CENTER, "Watchtower SetReady");
+        it.print(160, 120, id(f_text), AMBER, TextAlign::CENTER, id(g_error).c_str());
+        it.print(160, 160, id(f_small), MUTED, TextAlign::CENTER, fit(id(g_base), id(f_small), 300).c_str());
+        it.print(160, 184, id(f_small), MUTED, TextAlign::CENTER,
+                 ("Change settings at http://" + id(ip_addr).state).c_str());
         return;
       }
 

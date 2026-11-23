@@ -7,37 +7,60 @@ filament to load for the next waiting job, and a **Set Ready** button.
 
 *Mock-up of the layout with sample data.*
 
-**Status: untested on real hardware.** The configuration passes ESPHome's validation, but
-it could not be compiled or flashed where it was written. Treat the first flash as the test.
+**Status: untested on real hardware.** The firmware is built automatically, so it is
+known to compile, but it has not yet been run on a board. Treat the first flash as the test.
 
 ## What you need
 
 - An **ESP32-2432S028** board ("Cheap Yellow Display"): 2.8" 320×240 screen, single
   micro-USB port. The `R` version has resistive touch; without touch it still works as a
   display, but the Set Ready button can't be pressed.
-- A computer with [ESPHome](https://esphome.io/guides/installing_esphome) installed and
-  a micro-USB **data** cable.
+- A micro-USB **data** cable and a computer with Chrome or Edge, for the one-off flash.
+- A phone, for the setup steps.
 - The SetReady server reachable from your Wi-Fi (2.4 GHz), with the Watchtower login set
   in Settings if you want the filament advice.
 
-## Setting one up
+Every board runs the same firmware. Nothing is edited per printer; each board is told
+its Wi-Fi, server and token after it starts.
 
-1. On the SetReady page, open **Settings → Printer displays**, choose the printer and
-   press **Create token**. Copy the token; it is shown once.
-2. Copy `printer-display.yaml` and edit the values at the top:
+## 1. Flash the board (once)
 
-   | Value | What to put |
-   |---|---|
-   | `device_name` | A unique name per screen, e.g. `display-p1s-5` |
-   | `wifi_ssid`, `wifi_password` | Your 2.4 GHz Wi-Fi |
-   | `server` | The SetReady page's address, e.g. `http://192.168.2.2:8080`, no trailing slash |
-   | `token` | The token from step 1 |
+1. Download `printer-display.factory.bin` from the
+   [display-latest release](https://github.com/M4-Consulting-Ltd/Watchtower-SetReady/releases/tag/display-latest).
+2. Plug the board into the computer and open <https://web.esphome.io> in Chrome or Edge.
+3. Click **Connect**, pick the board's serial port, then **Install** and choose the file.
 
-3. Plug the board in and run `esphome run your-file.yaml`. Choose the serial port when
-   asked. This **replaces whatever firmware is on the board**.
-4. The screen shows "Connecting…", then the printer within a few seconds.
+This **replaces whatever firmware is on the board**. If the port doesn't appear, hold the
+board's **BOOT** button while plugging it in.
 
-Later changes can be sent over Wi-Fi with the same command.
+## 2. Set it up (on the board)
+
+The screen walks you through two steps.
+
+**Step 1 of 2: Wi-Fi.** The screen shows a network name such as
+`printer-display-a1b2c3`. Join that network on your phone. A page opens by itself (if
+not, browse to `http://192.168.4.1`). Choose your own Wi-Fi and enter its password.
+
+**Step 2 of 2: server and token.** The screen now shows a web address such as
+`http://192.168.2.57`. Open it on a phone or computer on the same Wi-Fi and fill in:
+
+- **SetReady server address:** where the SetReady page runs, e.g. `192.168.2.2:8080`.
+  `http://` is added for you.
+- **Display token:** on the SetReady page, open **Settings → Printer displays**, choose
+  the printer this board is for, press **Create token**, and paste it here.
+
+The board saves both and shows the printer within a few seconds. They survive power cuts.
+
+**Changing things later.** Open the board's address again to change the server or
+token. The address is shown on the screen whenever the server can't be reached. If the
+Wi-Fi changes or can't be joined, the board goes back to step 1 after about a minute.
+
+## Building it yourself (optional)
+
+With [ESPHome](https://esphome.io/guides/installing_esphome) installed:
+`esphome run printer-display.yaml`. The `default_server` and `default_token` values at
+the top of the file can bake those two settings in, which saves step 2 when you are
+only making one.
 
 ## What the screen shows
 
@@ -58,25 +81,31 @@ It asks the server every 10 seconds.
 
 | What you see | Likely cause |
 |---|---|
-| "No Wi-Fi" | Wrong Wi-Fi name or password, or a 5 GHz-only network |
-| "Can't reach server" | Wrong `server` address or port, or the server isn't reachable from Wi-Fi |
-| "Token not accepted" | Token mistyped, or revoked in Settings |
+| Stuck on "Setup: step 1 of 2" | Wrong Wi-Fi password, or a 5 GHz-only network; join the board's network again and re-enter |
+| "Can't reach server" | Wrong server address or port (it is shown underneath), or the server isn't reachable from Wi-Fi |
+| "Token not accepted" | Token mistyped, or revoked in Settings; create a new one and enter it on the board's page |
 | "Not found in Watchtower" | The printer was renamed; create a new token |
 | Colours inverted or mirrored | Your board is a different variant; see below |
 | Touches land in the wrong place | Touch calibration; see below |
 
 **Screen variants.** The two-USB-port version of this board uses a different screen.
-For that one, change `model: ILI9341` to `model: ST7789V` and set `invert_colors: true`.
+For that one, change `model: ILI9341` to `model: ST7789V` and set `invert_colors: true`
+in `printer-display.yaml` and build it yourself.
 If the picture is upside down or mirrored, change `mirror_x` / `mirror_y` under the
 display's `transform`.
 
 **Touch calibration.** If the button doesn't respond where it is drawn, flip `mirror_x`
 or `mirror_y` under the touchscreen's `transform` first. For fine tuning, watch the log
-(`esphome logs your-file.yaml`) while pressing the corners and adjust the `calibration`
+(`esphome logs printer-display.yaml`, or the **Logs** button on web.esphome.io) while pressing the corners and adjust the `calibration`
 numbers to the raw values it reports.
 
 **Colours are approximate.** The board doesn't have the memory for full colour, so the
 filament dots use a reduced palette. Similar shades can look the same.
+
+## Who can change a board's settings
+
+The board's settings page has no login, like the board itself: anyone on your Wi-Fi who
+opens its address can change the server or token. The token is never shown back.
 
 ## What a display is allowed to do
 
