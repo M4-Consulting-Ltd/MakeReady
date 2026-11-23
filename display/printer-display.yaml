@@ -264,6 +264,8 @@ globals:
   - {id: g_base,   type: std::string, initial_value: '""'}  # server address, tidied
   - {id: g_url_get,  type: std::string, initial_value: '""'}
   - {id: g_url_post, type: std::string, initial_value: '""'}
+  - {id: g_url_undo, type: std::string, initial_value: '""'}
+  - {id: g_undo,     type: bool,        initial_value: "false"}  # offer "Not ready"
   - {id: g_auth,     type: std::string, initial_value: '""'}   # "Bearer <token>"
   - {id: g_ok,     type: bool,        initial_value: "false"}
   - {id: g_error,  type: std::string, initial_value: '""'}   # empty until the first reply
@@ -331,6 +333,7 @@ script:
           id(g_base) = s;
           id(g_url_get) = s + "/api/display";
           id(g_url_post) = s + "/api/display/set-ready";
+          id(g_url_undo) = s + "/api/display/not-ready";
           id(g_auth) = "Bearer " + id(cfg_token).state;
           if (!wifi::global_wifi_component->is_connected()) id(g_setup) = 3;
           else if (s.empty() || id(cfg_token).state.empty()) id(g_setup) = 2;
@@ -375,6 +378,7 @@ script:
                           id(g_job)    = root["job"]    | "";
                           id(g_warn)   = root["warn"]   | "";
                           id(g_button) = root["button"] | "";
+                          id(g_undo)   = root["undo"]   | false;
                           int n = 0;
                           JsonArray fils = root["fil"];
                           for (JsonObject f : fils) {
@@ -422,7 +426,9 @@ script:
       - globals.set: {id: g_sending, value: "true"}
       - component.update: screen
       - http_request.post:
-          url: !lambda return id(g_url_post).c_str();
+          # The one button is Set Ready on a waiting plate, Not ready on a ready printer.
+          url: !lambda |-
+            return (id(g_button).empty() && id(g_undo) ? id(g_url_undo) : id(g_url_post)).c_str();
           request_headers:
             Authorization: !lambda return id(g_auth).c_str();
             Content-Type: application/json
@@ -670,7 +676,8 @@ display:
         it.print(12, y, id(f_small), TEXT, fit(id(g_job), id(f_small), 296).c_str());
         y += 22;
       }
-      bool button = !id(g_button).empty();
+      bool undo = id(g_button).empty() && id(g_undo);    // ready: offer to take it back
+      bool button = !id(g_button).empty() || undo;
       int bottom = (button || printing || bar) ? 182 : 236;
       for (int i = 0; advice && i < id(g_fil_n) && y + 20 <= bottom; i++) {
         uint32_t c = id(g_fil_c)[i];
@@ -686,9 +693,16 @@ display:
       // Printing: the same bar as a progress bar, filled in green as the print goes on.
       if (button) {
         bool held = id(btn_touch).state;
-        it.filled_rectangle(10, 186, 300, 48, id(g_sending) ? MUTED : held ? GREEN : GO);
+        if (undo) {
+          // Quieter than Set Ready: an outline, so it doesn't read as the thing to press.
+          it.filled_rectangle(10, 186, 300, 48, id(g_sending) || held ? MUTED : CARD);
+          it.rectangle(10, 186, 300, 48, MUTED);
+        } else {
+          it.filled_rectangle(10, 186, 300, 48, id(g_sending) ? MUTED : held ? GREEN : GO);
+        }
         it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER,
-                 id(g_sending) ? "Sending..." : held ? "Keep holding..." : "Hold: Set Ready");
+                 id(g_sending) ? "Sending..." : held ? "Keep holding..."
+                 : undo ? "Hold: Not ready" : "Hold: Set Ready");
       } else if (printing || bar) {
         int pct = id(g_pct) < 0 ? 0 : id(g_pct) > 100 ? 100 : id(g_pct);
         it.filled_rectangle(10, 186, 300, 48, CARD);
@@ -762,6 +776,6 @@ binary_sensor:
     on_press:
       - if:
           condition:
-            lambda: return !id(g_button).empty() && !id(g_sending);
+            lambda: return (!id(g_button).empty() || id(g_undo)) && !id(g_sending);
           then:
             - script.execute: set_ready
