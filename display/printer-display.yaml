@@ -88,6 +88,10 @@ captive_portal:
 http_request:
   verify_ssl: true                     # for the firmware download; the SetReady page is plain http
   timeout: 8s
+  # GitHub's download links answer with a redirect whose headers run to several thousand
+  # characters; with the default 512 the update check fails before it starts.
+  buffer_size_rx: 8192
+  buffer_size_tx: 2048
 
 json:
 

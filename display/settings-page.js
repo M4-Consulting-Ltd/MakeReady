@@ -226,6 +226,11 @@ function build() {
   $('check').addEventListener('click', () => {
     $('update').textContent = 'Checking…';
     post('button', NAME.check, 'press');
+    // The board says nothing when a check fails, so don't wait for ever.
+    setTimeout(() => {
+      if ($('update').textContent === 'Checking…')
+        $('update').textContent = "Couldn't check. The board may not be able to reach github.com; see the log below.";
+    }, 25000);
   });
   $('install').addEventListener('click', () => {
     $('update').textContent = 'Installing… the board restarts when it is done.';
