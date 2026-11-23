@@ -32,6 +32,9 @@ esphome:
   on_boot:
     priority: -100
     then:
+      - output.turn_off: led_red
+      - output.turn_off: led_green
+      - output.turn_off: led_blue
       - script.execute: fetch
 
 esp32:
@@ -72,7 +75,7 @@ web_server:
 text:
   - platform: template
     id: cfg_server
-    name: SetReady server address
+    name: SetReady page address (not Watchtower)
     icon: mdi:server
     mode: text
     optimistic: true
@@ -169,8 +172,14 @@ script:
                     - lambda: |-
                         if (response->status_code != 200) {
                           id(g_ok) = false;
-                          id(g_error) = response->status_code == 401
-                            ? std::string("Token not accepted") : std::string("Server error ") + std::to_string(response->status_code);
+                          // SetReady's own refusal mentions the display token. Anything else
+                          // answering (Watchtower itself, a router page) is the wrong address.
+                          if (response->status_code == 401 && body.find("display token") != std::string::npos)
+                            id(g_error) = "Token not accepted";
+                          else if (response->status_code == 401 || response->status_code == 404)
+                            id(g_error) = "Not a SetReady server";
+                          else
+                            id(g_error) = std::string("Server error ") + std::to_string(response->status_code);
                           return;
                         }
                         bool parsed = json::parse_json(body, [](JsonObject root) -> bool {
@@ -240,6 +249,11 @@ output:
   - platform: ledc
     pin: GPIO21
     id: backlight_pwm
+
+  # The board's RGB status light (lit when the pin is low). Held off so it doesn't glow.
+  - {platform: gpio, pin: {number: GPIO4, inverted: true}, id: led_red}
+  - {platform: gpio, pin: {number: GPIO16, inverted: true}, id: led_green}
+  - {platform: gpio, pin: {number: GPIO17, inverted: true}, id: led_blue}
 
 light:
   - platform: monochromatic
@@ -315,7 +329,7 @@ display:
         it.print(12, 50, id(f_text), TEXT, "Scan to open");
         it.print(12, 72, id(f_text), TEXT, "this board's");
         it.print(12, 94, id(f_text), TEXT, "settings.");
-        it.print(12, 126, id(f_small), MUTED, "Enter the server");
+        it.print(12, 126, id(f_small), MUTED, "Enter the SetReady");
         it.print(12, 144, id(f_small), MUTED, "address and token,");
         it.print(12, 162, id(f_small), MUTED, "then press Apply");
         it.print(12, 180, id(f_small), MUTED, "and restart.");
