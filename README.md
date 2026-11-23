@@ -17,6 +17,10 @@ For each printer it shows:
 Under the printers, a **Waiting jobs** list (optional) shows what each queued job needs
 and which printer could run it, or what would have to be loaded where.
 
+It can also drive a small **touch screen on the front of each printer**, showing that
+printer's progress and what to load next, with its own Set Ready button. See
+[Printer displays](#printer-displays).
+
 ![The page showing six printers with camera pictures, loaded filament and buttons, above a list of waiting jobs](docs/screenshot.png)
 
 *Mock-up with sample data.*
@@ -29,6 +33,7 @@ with or endorsed by Watchtower.
 - [Quick start](#quick-start)
 - [Settings](#settings)
 - [Using the page](#using-the-page)
+- [Printer displays](#printer-displays)
 - [Docker and Unraid](#docker-and-unraid)
 - [Security](#security)
 - [How it works](#how-it-works)
@@ -184,12 +189,6 @@ The matching is this page's own estimate, not Watchtower's scheduler:
 
 Watchtower makes the final decision, so treat "load X into Y" as a guide.
 
-### Printer displays
-
-A small touch screen can sit on the front of each printer and show what to load, with a
-Set Ready button. It runs on a cheap ESP32 board with a built-in screen and talks to this
-server with its own per-printer token. See [display/README.md](display/README.md).
-
 ### Layout
 
 The cards arrange themselves from the screen size and the number of printers:
@@ -201,6 +200,79 @@ The cards arrange themselves from the screen size and the number of printers:
 - phones get one column.
 
 Light and dark themes follow the device setting.
+
+## Printer displays
+
+A small touch screen for the front of each printer, one per printer, so whoever is
+standing at the machine can see what it needs without opening the page.
+
+![Six display screens: starting up, Wi-Fi setup with a QR code, printing with time left and a progress bar, finished with a filament to load, finished and ready for the next job, and the queue page](docs/display-screens.png)
+
+*Mock-up of the screens with sample data.*
+
+### What it shows
+
+- **While printing:** estimated time left and estimated completion time in large type,
+  and a bar that fills as the print goes on.
+- **When the print is done:** either **Set Ready picks up:** with the next job, or
+  **Load for next job:** with the filament to fetch, by colour name and weight. A warning
+  appears if a loaded spool has less than the job needs.
+- **Set Ready:** a button on the screen, held for a second so a brush against it does
+  nothing.
+- **A queue page:** swipe sideways, or tap the top bar, for the jobs waiting for that
+  printer, in Watchtower's order.
+
+### The hardware
+
+| | |
+|---|---|
+| Board | ESP32-2432S028, sold as the "Cheap Yellow Display": an ESP32 with a 2.8" 320×240 colour touch screen on one board |
+| Cost | Roughly £10–15 each |
+| Power | USB, about 0.6–0.75 W (120–150 mA at 5 V); any USB port or phone charger |
+| Network | Wi-Fi, 2.4 GHz only |
+| Screen types | Three look-alike variants (ILI9341, ST7789, ILI9342). There is a firmware file for each; boards with both a micro-USB and a USB-C socket have so far needed the ST7789 one |
+
+The same boards are often sold pre-loaded as desktop crypto "lottery miner" gadgets;
+those work too, once reflashed.
+
+### Setting one up
+
+No software to install and nothing to edit; every board runs the same firmware.
+
+1. **Flash it once** from a browser: download the firmware from the
+   [display-latest release](https://github.com/M4-Consulting-Ltd/Watchtower-SetReady/releases/tag/display-latest)
+   and install it with <https://web.esphome.io> over USB.
+2. **Scan the QR code** on the screen with a phone to join the board's own Wi-Fi, and
+   choose your network.
+3. **Create a token** for the printer under **Settings → Printer displays** on the
+   SetReady page.
+4. **Scan the second QR code** to open the board's settings page, enter the SetReady
+   address and the token, and press **Apply and restart**.
+
+Each board has its own settings page on your network, where you can also:
+
+- move it to another Wi-Fi network;
+- see which firmware version it is running;
+- check for a newer version, and install it over Wi-Fi, by hand or automatically;
+- upload a firmware file directly;
+- dim the screen.
+
+Full instructions, troubleshooting and how to build the firmware yourself are in
+[display/README.md](display/README.md).
+
+### What a display can do
+
+Each token is tied to one printer. With it, a board can read that printer's summary and
+send Set Ready for it, and nothing else: no other printers, no cameras, no settings, no
+pause or stop. Tokens are stored hashed and can be revoked in Settings. The board's own
+settings page has no login, so anyone on your Wi-Fi can change a board's server address,
+token or firmware.
+
+### Status
+
+Running on real two-socket boards with the ST7789 screen: flashing, on-screen setup,
+the printer screens and live data all work. The touch button, the swipe to the queue
+page and the over-Wi-Fi update have been built but not yet confirmed on hardware.
 
 ## Docker and Unraid
 
