@@ -119,7 +119,7 @@ same name. Environment variables win.
 
 | Card | Meaning | Buttons |
 |---|---|---|
-| Green | Ready for the next job | Nothing to do |
+| Green | Ready for the next job | **Not ready**: takes a Set Ready back, until a job is sent (needs the Watchtower login) |
 | Red dot, solid green button | Plate waiting to be cleared | **Plate cleared – Set Ready**: press once the plate is clear |
 | Red, slow pulse | Printing, with progress, time left and finish time | Small **pause** and **stop** buttons |
 | Red, fast blink | Paused or error, with time left | **Resume print** and a small **stop** button |
@@ -129,7 +129,7 @@ Confirmations, so a stray touch on a wall tablet can't move a machine or lose a 
 
 - **Pause** and **Stop** open a dialog first. Stop cancels the job; it can't be resumed.
 - **Resume** needs a second tap within 4 seconds.
-- **Set Ready** is a single tap.
+- **Set Ready** is a single tap. **Not ready** undoes it if it was pressed by mistake.
 
 If Watchtower refuses a command, the reason appears under the button.
 
@@ -346,6 +346,7 @@ Private web API, using the Watchtower login:
 | `GET /api/cameras`, `GET /api/camera/{name}` | `GET /api/system/streams`, `GET /api/go2rtc/frame.jpeg?src=…` |
 | `GET /api/queue` | `GET /api/queue`, `GET /api/filament/assignments`, `GET /api/printers` |
 | `POST /api/printers/{name}/reread-filament` | Socket.IO event `printer_command` with `{"command":"read_slot_rfid","args":{"ams_index","tray_index"}}`, once per AMS slot |
+| `POST /api/printers/{name}/not-ready` | Socket.IO event `printer_set_ready` with `{"printer_name","ready":false}`, the way Watchtower's own page does it |
 
 The server's own calls: `GET`/`POST /api/config` (settings), `GET /api/session`,
 `POST /api/login` and `POST /api/logout` (page password), `GET`/`POST /api/displays`

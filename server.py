@@ -803,6 +803,73 @@ def reread_slots(printer, slots):
     return results
 
 
+def _printer_now(printer):
+    """The printer as the public API reports it right now, or {}."""
+    status, body, _ = upstream("GET", "/printers/" + urllib.parse.quote(printer, safe=""))
+    try:
+        data = json.loads(body).get("data") or {}
+    except (ValueError, AttributeError):
+        data = {}
+    return data if status == 200 and isinstance(data, dict) else {}
+
+
+def set_not_ready(printer):
+    """(status, body) for POST /api/printers/{name}/not-ready: take back a Set Ready.
+
+    The public API has no command for this, so it goes the way Watchtower's own page
+    does it: the "printer_set_ready" message with ready false, over the live connection.
+    """
+    if not (all(cam_creds()) and root_url()):
+        return 400, {"error": "Not ready needs the Watchtower login in Settings."}
+    now = _printer_now(printer)
+    if not now.get("online"):
+        return 409, {"error": "%s is offline or unknown." % printer}
+    if now.get("busy"):
+        return 409, {"error": "%s has already started a job." % printer}
+    if not now.get("ready"):
+        return 200, {"ok": True}                             # nothing to take back
+    if printer in (queue_data().get("sending") or {}):
+        return 409, {"error": "A job is already being sent to %s." % printer}
+    try:
+        with CAM_LOCK:
+            opener = cam_opener()
+        base = root_url() + "/socket.io/?EIO=4&transport=polling"
+        hello = _sio(opener, base)
+        sid = json.loads(hello[hello.index("{"):].split("\x1e")[0])["sid"]
+        url = base + "&sid=" + urllib.parse.quote(sid)
+        try:
+            _sio(opener, url, b"40")
+            _sio(opener, url, ("42" + json.dumps(["printer_set_ready", {
+                "printer_name": printer, "ready": False, "source": "setready"}])).encode())
+            for _ in range(2):                               # let it land; spot a refusal
+                try:
+                    text = _sio(opener, url, timeout=2)
+                except OSError:
+                    break
+                if any(pk.startswith("44") for pk in text.split("\x1e")):
+                    return 502, {"error": "Watchtower refused the live connection."}
+                if "2" in text.split("\x1e"):
+                    _sio(opener, url, b"3")
+        finally:
+            try:
+                _sio(opener, url, b"41")
+            except Exception:
+                pass
+    except Exception as e:
+        cam_reset()
+        return 502, {"error": "Couldn't reach Watchtower: %s." % (getattr(e, "reason", None) or e)}
+    with LOCK:
+        PRINTERS["at"] = 0
+    for _ in range(4):                                       # did Watchtower take it?
+        time.sleep(0.7)
+        now = _printer_now(printer)
+        if now and not now.get("ready"):
+            return 200, {"ok": True}
+    if now.get("busy"):
+        return 409, {"error": "%s has already started a job." % printer}
+    return 502, {"error": "Watchtower still shows %s as ready." % printer}
+
+
 def reread_filament(printer):
     """(status, body) for POST /api/printers/{name}/reread-filament."""
     if not (all(cam_creds()) and root_url()):
@@ -1259,6 +1326,11 @@ class Handler(BaseHTTPRequestHandler):
         if len(parts) == 5 and parts[:3] == ["", "api", "printers"] and parts[3] \
                 and parts[4] == "reread-filament":
             status, out = reread_filament(urllib.parse.unquote(parts[3]))
+            self.send(status, json.dumps(out).encode())
+            return
+        if len(parts) == 5 and parts[:3] == ["", "api", "printers"] and parts[3] \
+                and parts[4] == "not-ready":
+            status, out = set_not_ready(urllib.parse.unquote(parts[3]))
             self.send(status, json.dumps(out).encode())
             return
         # /api/printers/{name}/<one of COMMANDS> ; {name} arrives URL-encoded
