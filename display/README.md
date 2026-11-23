@@ -25,8 +25,17 @@ its Wi-Fi, server and token after it starts.
 
 ## 1. Flash the board (once)
 
-1. Download `printer-display.factory.bin` from the
+1. Download the firmware from the
    [display-latest release](https://github.com/M4-Consulting-Ltd/Watchtower-SetReady/releases/tag/display-latest).
+   These boards ship with one of three screens that look identical, so there are three
+   files. Start with the first; if the picture is scrambled, flash the next one.
+
+   | File | Screen | Usually found on |
+   |---|---|---|
+   | `printer-display.factory.bin` | ILI9341 | boards with a single micro-USB port |
+   | `printer-display-st7789.factory.bin` | ST7789 | boards with micro-USB and USB-C |
+   | `printer-display-ili9342.factory.bin` | ILI9342 | some boards with micro-USB and USB-C |
+
 2. Plug the board into the computer and open <https://web.esphome.io> in Chrome or Edge.
 3. Click **Connect**, pick the board's serial port, then **Install** and choose the file.
 
@@ -90,22 +99,20 @@ It asks the server every 10 seconds.
 | "Can't reach server" | Wrong server address or port (it is shown underneath), or the server isn't reachable from Wi-Fi |
 | "Token not accepted" | Token mistyped, or revoked in Settings; create a new one and enter it on the board's page |
 | "Not found in Watchtower" | The printer was renamed; create a new token |
-| Colours inverted or mirrored | Your board is a different variant; see below |
+| Scrambled picture, or inverted colours | The firmware is for a different screen type; see below |
 | Touches land in the wrong place | Touch calibration; see below |
 
-**Screen variants.** The two-USB-port version of this board uses a different screen.
-For that one, change `model: ILI9341` to `model: ST7789V` and set `invert_colors: true`
-in `printer-display.yaml` and build it yourself.
-If the picture is upside down or mirrored, change `mirror_x` / `mirror_y` under the
-display's `transform`.
+**Scrambled picture or wrong colours.** The firmware doesn't match the board's screen
+type. Flash one of the other two files listed under "Flash the board". Flashing again
+keeps the Wi-Fi, server and token already entered.
+
+**Upside down.** Build it yourself with `rotation: "270"` at the top of
+`printer-display.yaml` (the published files use 90).
 
 **Touch calibration.** If the button doesn't respond where it is drawn, flip `mirror_x`
 or `mirror_y` under the touchscreen's `transform` first. For fine tuning, watch the log
 (`esphome logs printer-display.yaml`, or the **Logs** button on web.esphome.io) while pressing the corners and adjust the `calibration`
 numbers to the raw values it reports.
-
-**Colours are approximate.** The board doesn't have the memory for full colour, so the
-filament dots use a reduced palette. Similar shades can look the same.
 
 ## Who can change a board's settings
 
