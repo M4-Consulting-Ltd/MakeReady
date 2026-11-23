@@ -1210,7 +1210,7 @@ def display_summary(name):
     got = (q.get("sending") or {}).get(name)
     if got and state != "offline":
         pct = got.get("pct")
-        out.update(status="Receiving job", head="Receiving job:", good=True, job=got["name"],
+        out.update(head="Receiving job:", good=True, job=got["name"],
                    fil=[], warn="", button="", pct=-1 if pct is None else pct,
                    bar="RECEIVING" if pct is None else "RECEIVING %d%%" % pct)
     # Ready with no job on its way yet: Set Ready can still be taken back.

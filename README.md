@@ -206,7 +206,7 @@ Light and dark themes follow the device setting.
 A small touch screen for the front of each printer, one per printer, so whoever is
 standing at the machine can see what it needs without opening the page.
 
-![Six display screens: starting up, Wi-Fi setup with a QR code, printing with time left and a progress bar, finished with a filament to load, finished and ready for the next job, and the queue page](docs/display-screens.png)
+![Nine display screens: starting up, Wi-Fi setup with a QR code, printing with time left and a progress bar, finished with a filament to load, finished with a job to pick up, ready with a Not ready button, receiving a job, the job list, and one job's filaments](docs/display-screens.png)
 
 *Mock-up of the screens with sample data.*
 
@@ -251,12 +251,17 @@ No software to install and nothing to edit; every board runs the same firmware.
 
 Each board has its own settings page on your network, where you can also:
 
-- move it to another Wi-Fi network;
+- move it to another Wi-Fi network, picked from a list of those nearby;
+- give it a name you will recognise on your network;
 - see which firmware version it is running;
 - check for a newer version, and install it over Wi-Fi, by hand or automatically;
 - upload a firmware file directly;
 - turn the picture upside down, for mounting either way round;
 - dim the screen.
+
+<img src="docs/display-settings.png" alt="The board's settings page on a phone: sections for the SetReady connection, screen, Wi-Fi and firmware" width="300">
+
+*Mock-up of a board's settings page.*
 
 Full instructions, troubleshooting and how to build the firmware yourself are in
 [display/README.md](display/README.md).
