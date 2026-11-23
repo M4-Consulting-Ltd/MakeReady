@@ -191,6 +191,21 @@ globals:
   - {id: g_fil_t,  type: "std::array<std::string, 4>"}
   - {id: g_fil_c,  type: "std::array<uint32_t, 4>"}
   - {id: g_sending, type: bool,       initial_value: "false"}
+  # Second page: the jobs waiting for this printer.
+  - {id: g_page,    type: int,        initial_value: "0"}     # 0 = printer, 1 = queue
+  - {id: g_page_at, type: uint32_t,   initial_value: "0"}     # when the queue page was opened
+  - {id: g_q_n,     type: int,        initial_value: "0"}
+  - {id: g_q_more,  type: int,        initial_value: "0"}
+  - {id: g_q_name,  type: "std::array<std::string, 5>"}
+  - {id: g_q_time,  type: "std::array<std::string, 5>"}
+  - {id: g_q_ok,    type: "std::array<bool, 5>"}
+  - {id: g_q_ncol,  type: "std::array<int, 5>"}
+  - {id: g_q_col,   type: "std::array<std::array<uint32_t, 4>, 5>"}
+  # Swipe tracking: where the finger went down and where it was last seen.
+  - {id: g_sw_x0,   type: int,        initial_value: "0"}
+  - {id: g_sw_y0,   type: int,        initial_value: "0"}
+  - {id: g_sw_x,    type: int,        initial_value: "0"}
+  - {id: g_sw_y,    type: int,        initial_value: "0"}
 
 script:
   - id: fetch
@@ -220,7 +235,7 @@ script:
                 request_headers:
                   Authorization: !lambda return id(g_auth).c_str();
                 capture_response: true
-                max_response_buffer_size: 4096
+                max_response_buffer_size: 6144
                 on_response:
                   then:
                     - lambda: |-
@@ -259,6 +274,25 @@ script:
                             n++;
                           }
                           id(g_fil_n) = n;
+                          int q = 0;
+                          JsonArray jobs = root["queue"];
+                          for (JsonObject j : jobs) {
+                            if (q >= 5) break;
+                            id(g_q_name)[q] = j["n"] | "";
+                            id(g_q_time)[q] = j["t"] | "";
+                            id(g_q_ok)[q] = j["ok"] | false;
+                            int k = 0;
+                            JsonArray cols = j["c"];
+                            for (JsonVariant c : cols) {
+                              if (k >= 4) break;
+                              const char *hex = c | "";
+                              id(g_q_col)[q][k++] = strlen(hex) == 6 ? strtoul(hex, nullptr, 16) : 0x808080;
+                            }
+                            id(g_q_ncol)[q] = k;
+                            q++;
+                          }
+                          id(g_q_n) = q;
+                          id(g_q_more) = root["more"] | 0;
                           return true;
                         });
                         id(g_ok) = parsed;
@@ -430,12 +464,55 @@ display:
         return;
       }
 
+      // Two small dots in the top bar show which of the two pages is on screen.
+      auto pager = [&](int page) {
+        it.filled_circle(262, 19, 3, page == 0 ? TEXT : MUTED);
+        it.filled_circle(274, 19, 3, page == 1 ? TEXT : MUTED);
+      };
+
+      // Page 2 (swipe, or tap the top bar): the jobs waiting for this printer, in
+      // Watchtower's order. It goes back to the printer page by itself after 30 seconds.
+      if (id(g_page) == 1 && millis() - id(g_page_at) > 30000) id(g_page) = 0;
+      if (id(g_page) == 1) {
+        it.filled_rectangle(0, 0, 320, 38, CARD);
+        it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, fit(id(g_title) + " queue", id(f_big), 236).c_str());
+        pager(1);
+        if (id(g_q_n) == 0) {
+          it.print(160, 120, id(f_text), MUTED, TextAlign::CENTER, "No jobs waiting");
+          it.print(160, 146, id(f_small), MUTED, TextAlign::CENTER, "for this printer");
+        }
+        for (int i = 0; i < id(g_q_n); i++) {
+          int y = 44 + i * 44;
+          Color edge = id(g_q_ok)[i] ? GREEN : RED;          // has the filament / needs loading
+          it.filled_rectangle(4, y + 2, 4, 38, edge);
+          int tw = 0, x1, y1, th;
+          if (!id(g_q_time)[i].empty()) {
+            it.get_text_bounds(0, 0, id(g_q_time)[i].c_str(), id(f_small), TextAlign::TOP_LEFT, &x1, &y1, &tw, &th);
+            it.print(312, y + 2, id(f_small), MUTED, TextAlign::TOP_RIGHT, id(g_q_time)[i].c_str());
+          }
+          it.print(16, y, id(f_text), TEXT, fit(id(g_q_name)[i], id(f_text), 290 - tw).c_str());
+          for (int k = 0; k < id(g_q_ncol)[i]; k++) {
+            uint32_t c = id(g_q_col)[i][k];
+            it.filled_circle(23 + k * 18, y + 32, 6, Color((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF));
+            it.circle(23 + k * 18, y + 32, 6, MUTED);
+          }
+          it.print(100, y + 23, id(f_small), edge, id(g_q_ok)[i] ? "ready to run" : "needs filament");
+        }
+        if (id(g_q_more) > 0)
+          it.print(160, 44 + id(g_q_n) * 44 + 1, id(f_small), MUTED, TextAlign::TOP_CENTER,
+                   ("+" + std::to_string(id(g_q_more)) + " more").c_str());
+        if (id(g_touch_at) != 0 && millis() - id(g_touch_at) < 1500)
+          it.circle(id(g_touch_x), id(g_touch_y), 10, Color(255, 255, 255));
+        return;
+      }
+
       // Header: printer name, with a dot in the state colour.
       const std::string &st = id(g_state);
       Color dot = st == "ready" ? GREEN : st == "offline" ? AMBER : st == "unknown" ? MUTED : RED;
       it.filled_rectangle(0, 0, 320, 38, CARD);
-      it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, fit(id(g_title), id(f_big), 260).c_str());
+      it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, fit(id(g_title), id(f_big), 236).c_str());
       it.filled_circle(298, 19, 9, dot);
+      pager(0);
 
       bool printing = st == "printing";
       bool advice = !id(g_head).empty();
@@ -524,6 +601,22 @@ touchscreen:
           id(g_touch_y) = touch.y;
           id(g_touch_at) = millis();
           ESP_LOGI("touch", "x=%d y=%d (raw %d, %d)", touch.x, touch.y, touch.x_raw, touch.y_raw);
+          id(g_sw_x0) = id(g_sw_x) = touch.x;
+          id(g_sw_y0) = id(g_sw_y) = touch.y;
+    on_update:
+      - lambda: |-
+          for (auto &t : touches) { id(g_sw_x) = t.x; id(g_sw_y) = t.y; }
+    # Finger lifted: a sideways swipe, or a tap on the top bar, switches page.
+    on_release:
+      - lambda: |-
+          int dx = id(g_sw_x) - id(g_sw_x0), dy = id(g_sw_y) - id(g_sw_y0);
+          bool swipe = abs(dx) > 60 && abs(dy) < 60;
+          bool tap_bar = abs(dx) < 20 && abs(dy) < 20 && id(g_sw_y0) < 40;
+          if (id(g_setup) == 0 && id(g_ok) && (swipe || tap_bar)) {
+            id(g_page) = id(g_page) == 0 ? 1 : 0;
+            id(g_page_at) = millis();
+          }
+      - component.update: screen
 
 binary_sensor:
   # Finger on the button area: used to draw the "keep holding" state.
