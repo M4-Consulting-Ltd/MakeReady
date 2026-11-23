@@ -1,0 +1,424 @@
+# Watchtower SetReady printer display
+#
+# A small touch screen for the front of one printer. It shows the printer's state, what
+# filament to load for the next waiting job, and a Set Ready button (hold to press).
+#
+# Board: ESP32-2432S028 / ESP32-2432S028R ("Cheap Yellow Display"), 2.8" 320x240,
+#        the single micro-USB version with an ILI9341 screen.
+#
+# Nothing needs editing. After flashing, the board sets itself up:
+#   1. It starts its own Wi-Fi network; join it from a phone and choose your Wi-Fi.
+#   2. The screen then shows a web address; open it and enter the SetReady server's
+#      address and the display token.
+# See README.md in this folder for the full steps.
+
+substitutions:
+  device_name: printer-display        # each board adds its own suffix, e.g. printer-display-a1b2c3
+  refresh: 10s                         # how often to ask the server
+  # Optional: bake values in at build time instead of entering them on the board.
+  default_server: ""
+  default_token: ""
+
+esphome:
+  name: ${device_name}
+  friendly_name: Printer display
+  name_add_mac_suffix: true            # one firmware for every board, unique names
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: fetch
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+
+ota:
+  - platform: esphome
+
+# No Wi-Fi details are built in. Until it has some (or if they stop working) the board
+# runs its own network, named after the device, and a phone that joins it is shown a
+# page to pick the real Wi-Fi.
+wifi:
+  ap: {}
+  on_connect:
+    - script.execute: fetch
+  on_disconnect:
+    - script.execute: fetch
+
+improv_serial:                         # lets the browser flasher set Wi-Fi over USB too
+
+captive_portal:
+
+http_request:
+  verify_ssl: false                    # the SetReady page is plain http on the LAN
+  timeout: 8s
+
+json:
+
+# The board's own settings page (http://<its address>): server address and token.
+web_server:
+  port: 80
+  local: true                          # works without internet access
+
+text:
+  - platform: template
+    id: cfg_server
+    name: SetReady server address
+    icon: mdi:server
+    mode: text
+    optimistic: true
+    restore_value: true
+    max_length: 100
+    initial_value: "${default_server}"
+    on_value:
+      - script.execute: fetch
+  - platform: template
+    id: cfg_token
+    name: Display token
+    icon: mdi:key
+    mode: password
+    optimistic: true
+    restore_value: true
+    max_length: 80
+    initial_value: "${default_token}"
+    on_value:
+      - script.execute: fetch
+
+# "Apply and restart" on the settings page. Values are saved as they are entered; this
+# restarts the board so it comes up cleanly with them.
+button:
+  - platform: restart
+    name: Apply and restart
+    icon: mdi:restart
+
+# The setup QR code; its content is set from the screen code below.
+qr_code:
+  - id: setup_qr
+    value: "http://192.168.4.1"
+    ecc: LOW
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      id: ip_addr
+      name: IP address
+
+# What the server last told us to show.
+globals:
+  - {id: g_setup,  type: int,         initial_value: "1"}   # 1 = needs Wi-Fi, 2 = needs server/token, 0 = set up
+  - {id: g_base,   type: std::string, initial_value: '""'}  # server address, tidied
+  - {id: g_url_get,  type: std::string, initial_value: '""'}
+  - {id: g_url_post, type: std::string, initial_value: '""'}
+  - {id: g_auth,     type: std::string, initial_value: '""'}   # "Bearer <token>"
+  - {id: g_ok,     type: bool,        initial_value: "false"}
+  - {id: g_error,  type: std::string, initial_value: '"Connecting..."'}
+  - {id: g_title,  type: std::string, initial_value: '""'}
+  - {id: g_state,  type: std::string, initial_value: '""'}
+  - {id: g_status, type: std::string, initial_value: '""'}
+  - {id: g_sub,    type: std::string, initial_value: '""'}
+  - {id: g_head,   type: std::string, initial_value: '""'}
+  - {id: g_good,   type: bool,        initial_value: "false"}
+  - {id: g_job,    type: std::string, initial_value: '""'}
+  - {id: g_warn,   type: std::string, initial_value: '""'}
+  - {id: g_button, type: std::string, initial_value: '""'}
+  - {id: g_fil_n,  type: int,         initial_value: "0"}
+  - {id: g_fil_t,  type: "std::array<std::string, 4>"}
+  - {id: g_fil_c,  type: "std::array<uint32_t, 4>"}
+  - {id: g_sending, type: bool,       initial_value: "false"}
+
+script:
+  - id: fetch
+    mode: restart
+    then:
+      # Work out where we are in setup, and tidy the server address:
+      # "192.168.2.2:8080" and "http://192.168.2.2:8080/" both become "http://192.168.2.2:8080".
+      - lambda: |-
+          std::string s = id(cfg_server).state;
+          while (!s.empty() && (s.back() == '/' || s.back() == ' ')) s.pop_back();
+          while (!s.empty() && s.front() == ' ') s.erase(0, 1);
+          if (!s.empty() && s.find("://") == std::string::npos) s = "http://" + s;
+          id(g_base) = s;
+          id(g_url_get) = s + "/api/display";
+          id(g_url_post) = s + "/api/display/set-ready";
+          id(g_auth) = "Bearer " + id(cfg_token).state;
+          if (!wifi::global_wifi_component->is_connected()) id(g_setup) = 1;
+          else if (s.empty() || id(cfg_token).state.empty()) id(g_setup) = 2;
+          else id(g_setup) = 0;
+      - component.update: screen
+      - if:
+          condition:
+            lambda: return id(g_setup) == 0;
+          then:
+            - http_request.get:
+                url: !lambda return id(g_url_get).c_str();
+                request_headers:
+                  Authorization: !lambda return id(g_auth).c_str();
+                capture_response: true
+                max_response_buffer_size: 4096
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code != 200) {
+                          id(g_ok) = false;
+                          id(g_error) = response->status_code == 401
+                            ? std::string("Token not accepted") : std::string("Server error ") + std::to_string(response->status_code);
+                          return;
+                        }
+                        bool parsed = json::parse_json(body, [](JsonObject root) -> bool {
+                          id(g_title)  = root["title"]  | "";
+                          id(g_state)  = root["state"]  | "";
+                          id(g_status) = root["status"] | "";
+                          id(g_sub)    = root["sub"]    | "";
+                          id(g_head)   = root["head"]   | "";
+                          id(g_good)   = root["good"]   | false;
+                          id(g_job)    = root["job"]    | "";
+                          id(g_warn)   = root["warn"]   | "";
+                          id(g_button) = root["button"] | "";
+                          int n = 0;
+                          JsonArray fils = root["fil"];
+                          for (JsonObject f : fils) {
+                            if (n >= 4) break;
+                            id(g_fil_t)[n] = f["t"] | "";
+                            const char *hex = f["c"] | "";
+                            id(g_fil_c)[n] = strlen(hex) == 6 ? strtoul(hex, nullptr, 16) : 0x808080;
+                            n++;
+                          }
+                          id(g_fil_n) = n;
+                          return true;
+                        });
+                        id(g_ok) = parsed;
+                        if (!parsed) id(g_error) = "Bad reply from server";
+                    - component.update: screen
+                on_error:
+                  then:
+                    - lambda: |-
+                        id(g_ok) = false;
+                        id(g_error) = "Can't reach server";
+                    - component.update: screen
+
+  - id: set_ready
+    mode: single
+    then:
+      - globals.set: {id: g_sending, value: "true"}
+      - component.update: screen
+      - http_request.post:
+          url: !lambda return id(g_url_post).c_str();
+          request_headers:
+            Authorization: !lambda return id(g_auth).c_str();
+            Content-Type: application/json
+          body: "{}"
+      - delay: 1500ms                  # give Watchtower a beat
+      - globals.set: {id: g_sending, value: "false"}
+      - script.execute: fetch
+
+interval:
+  - interval: ${refresh}
+    then:
+      - script.execute: fetch
+
+# ---- Screen (pins are fixed on this board) ----
+spi:
+  - id: tft_spi
+    clk_pin: GPIO14
+    mosi_pin: GPIO13
+    miso_pin: GPIO12
+  - id: touch_spi
+    clk_pin: GPIO25
+    mosi_pin: GPIO32
+    miso_pin: GPIO39
+
+output:
+  - platform: ledc
+    pin: GPIO21
+    id: backlight_pwm
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    id: backlight
+    name: Backlight
+    restore_mode: ALWAYS_ON
+
+font:
+  - {file: "gfonts://Roboto@500", id: f_big,   size: 24}
+  - {file: "gfonts://Roboto",     id: f_text,  size: 18}
+  - {file: "gfonts://Roboto",     id: f_small, size: 15}
+
+display:
+  - platform: ili9xxx
+    id: screen
+    model: ILI9341
+    spi_id: tft_spi
+    cs_pin: GPIO15
+    dc_pin: GPIO2
+    invert_colors: false
+    color_palette: 8BIT                # 16-bit needs more memory than this board has free
+    update_interval: 250ms             # quick enough to show the button being held
+    dimensions:
+      width: 320
+      height: 240
+    transform:                         # landscape, USB port on the right
+      swap_xy: true
+      mirror_x: false
+      mirror_y: false
+    lambda: |-
+      const Color BG(17, 19, 23), CARD(27, 30, 36), TEXT(236, 238, 242), MUTED(154, 163, 178);
+      const Color GREEN(53, 183, 101), RED(239, 83, 80), AMBER(240, 162, 46), GO(28, 143, 69);
+      it.fill(BG);
+
+      // Shorten text with "..." until it fits a width.
+      auto fit = [&](std::string s, display::BaseFont *f, int maxw) -> std::string {
+        int x1, y1, w, h;
+        it.get_text_bounds(0, 0, s.c_str(), f, TextAlign::TOP_LEFT, &x1, &y1, &w, &h);
+        if (w <= maxw) return s;
+        while (s.size() > 1) {
+          s.pop_back();
+          std::string t = s + "...";
+          it.get_text_bounds(0, 0, t.c_str(), f, TextAlign::TOP_LEFT, &x1, &y1, &w, &h);
+          if (w <= maxw) return t;
+        }
+        return s;
+      };
+
+      // A QR code on a white square (phones need the light border), top-left at x, y.
+      auto qr = [&](const std::string &value, int x, int y) {
+        static std::string shown;
+        if (value != shown) { id(setup_qr).set_value(value); shown = value; }
+        it.filled_rectangle(x - 8, y - 8, 132, 132, Color(255, 255, 255));
+        it.qr_code(x, y, id(setup_qr), Color(0, 0, 0), 4);
+      };
+
+      // First-time setup, shown until the board has Wi-Fi, a server address and a token.
+      // Each step has a QR code, so nothing has to be typed to get to the right page.
+      if (id(g_setup) == 1) {
+        std::string ap = std::string(App.get_name().c_str());
+        it.filled_rectangle(0, 0, 320, 38, CARD);
+        it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, "Setup 1 of 2: Wi-Fi");
+        qr("WIFI:S:" + ap + ";T:nopass;;", 188, 56);          // joins the board's own network
+        it.print(12, 50, id(f_text), TEXT, "Scan with your");
+        it.print(12, 72, id(f_text), TEXT, "phone's camera");
+        it.print(12, 94, id(f_text), TEXT, "to join the");
+        it.print(12, 116, id(f_text), TEXT, "board's Wi-Fi.");
+        it.print(12, 148, id(f_small), MUTED, "Then choose your");
+        it.print(12, 166, id(f_small), MUTED, "own Wi-Fi on the");
+        it.print(12, 184, id(f_small), MUTED, "page that opens.");
+        it.print(12, 214, id(f_small), GREEN, fit(ap, id(f_small), 296).c_str());
+        return;
+      }
+      if (id(g_setup) == 2) {
+        std::string url = "http://" + id(ip_addr).state;
+        it.filled_rectangle(0, 0, 320, 38, CARD);
+        it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, "Setup 2 of 2: Server");
+        qr(url, 188, 56);                                       // opens the board's settings page
+        it.print(12, 50, id(f_text), TEXT, "Scan to open");
+        it.print(12, 72, id(f_text), TEXT, "this board's");
+        it.print(12, 94, id(f_text), TEXT, "settings.");
+        it.print(12, 126, id(f_small), MUTED, "Enter the server");
+        it.print(12, 144, id(f_small), MUTED, "address and token,");
+        it.print(12, 162, id(f_small), MUTED, "then press Apply");
+        it.print(12, 180, id(f_small), MUTED, "and restart.");
+        it.print(12, 214, id(f_small), GREEN, fit(url, id(f_small), 296).c_str());
+        return;
+      }
+      if (!id(g_ok)) {
+        std::string url = "http://" + id(ip_addr).state;
+        it.filled_rectangle(0, 0, 320, 38, CARD);
+        it.print(12, 19, id(f_big), AMBER, TextAlign::CENTER_LEFT, fit(id(g_error), id(f_big), 296).c_str());
+        qr(url, 188, 56);                                       // the board's settings page
+        it.print(12, 50, id(f_text), TEXT, "Scan to check");
+        it.print(12, 72, id(f_text), TEXT, "this board's");
+        it.print(12, 94, id(f_text), TEXT, "settings.");
+        it.print(12, 126, id(f_small), MUTED, "Server:");
+        it.print(12, 144, id(f_small), MUTED, fit(id(g_base), id(f_small), 164).c_str());
+        it.print(12, 214, id(f_small), GREEN, fit(url, id(f_small), 296).c_str());
+        return;
+      }
+
+      // Header: printer name, with a dot in the state colour.
+      const std::string &st = id(g_state);
+      Color dot = st == "ready" ? GREEN : st == "offline" ? AMBER : st == "unknown" ? MUTED : RED;
+      it.filled_rectangle(0, 0, 320, 38, CARD);
+      it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, fit(id(g_title), id(f_big), 260).c_str());
+      it.filled_circle(298, 19, 9, dot);
+
+      it.print(12, 46, id(f_text), TEXT, fit(id(g_status), id(f_text), 296).c_str());
+      if (!id(g_sub).empty())
+        it.print(12, 70, id(f_small), MUTED, fit(id(g_sub), id(f_small), 296).c_str());
+
+      // Advice: a heading, the job, then the filament to load or a warning.
+      int y = 96;
+      if (!id(g_head).empty()) {
+        it.print(12, y, id(f_text), id(g_good) ? GREEN : RED, fit(id(g_head), id(f_text), 296).c_str());
+        y += 24;
+      }
+      if (!id(g_job).empty()) {
+        it.print(12, y, id(f_small), TEXT, fit(id(g_job), id(f_small), 296).c_str());
+        y += 22;
+      }
+      bool button = !id(g_button).empty();
+      int bottom = button ? 182 : 236;
+      for (int i = 0; i < id(g_fil_n) && y + 20 <= bottom; i++) {
+        uint32_t c = id(g_fil_c)[i];
+        it.filled_circle(22, y + 10, 9, Color((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF));
+        it.circle(22, y + 10, 9, MUTED);
+        it.print(40, y, id(f_text), TEXT, fit(id(g_fil_t)[i], id(f_text), 268).c_str());
+        y += 24;
+      }
+      if (!id(g_warn).empty() && y + 18 <= bottom)
+        it.print(12, y, id(f_small), AMBER, fit(id(g_warn), id(f_small), 296).c_str());
+
+      // Set Ready: hold the button for a second.
+      if (button) {
+        bool held = id(btn_touch).state;
+        it.filled_rectangle(10, 186, 300, 48, id(g_sending) ? MUTED : held ? GREEN : GO);
+        it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER,
+                 id(g_sending) ? "Sending..." : held ? "Keep holding..." : "Hold: Set Ready");
+      }
+
+touchscreen:
+  - platform: xpt2046
+    id: touch
+    spi_id: touch_spi
+    cs_pin: GPIO33
+    interrupt_pin: GPIO36
+    update_interval: 50ms
+    threshold: 400
+    # If touches land in the wrong place, adjust these (see README.md).
+    calibration:
+      x_min: 280
+      x_max: 3860
+      y_min: 340
+      y_max: 3860
+    transform:
+      swap_xy: true
+      mirror_x: false
+      mirror_y: false
+
+binary_sensor:
+  # Finger on the button area: used to draw the "keep holding" state.
+  - platform: touchscreen
+    id: btn_touch
+    touchscreen_id: touch
+    x_min: 10
+    x_max: 310
+    y_min: 186
+    y_max: 234
+  # The same area, but only "on" after a one-second hold: this sends Set Ready.
+  - platform: touchscreen
+    id: btn_held
+    touchscreen_id: touch
+    x_min: 10
+    x_max: 310
+    y_min: 186
+    y_max: 234
+    filters:
+      - delayed_on: 1s
+    on_press:
+      - if:
+          condition:
+            lambda: return !id(g_button).empty() && !id(g_sending);
+          then:
+            - script.execute: set_ready
