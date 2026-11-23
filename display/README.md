@@ -62,31 +62,37 @@ Put your phone back on your normal Wi-Fi and scan it to open the board's setting
 - **Display token:** on the SetReady page, open **Settings → Printer displays**, choose
   the printer this board is for, press **Create token**, and paste it here.
 
-Then press **Apply and restart**. The board restarts and shows the printer within a few
+Then press **Save and restart**. The board restarts and shows the printer within a few
 seconds. The settings are kept on the board and survive power cuts.
 
 **Changing things later.** Open the board's address again to change the server or
 token. Whenever the server can't be reached, the screen shows the reason with a QR code
 to that page.
 
-**Moving to another Wi-Fi.** On the board's page, fill in **Wi-Fi change 1: new network
-name** and **Wi-Fi change 2: new network password**, then press **Wi-Fi change 3:
-connect to new network**. The board tries the new network for 30 seconds. If it joins,
-it stays there and remembers it, and its address will probably change (the screen shows
-the new one if needed). If it can't join, it stays on the network it had; the page's
-**Wi-Fi change: result** line says which happened. If the old network is already gone,
-the board returns to step 1 after about a minute instead.
+**Moving to another Wi-Fi.** In the **Wi-Fi** section of the board's page, pick the
+network from the list (the ones the board saw when it last started; choose "Other
+network..." to type a name), enter its password and press **Connect**. The board tries
+the new network for 30 seconds. If it joins, it stays there and remembers it, and its
+address will probably change (the screen shows the new one if needed). If it can't join,
+it stays on the network it had, and the page says so. If the old network is already
+gone, the board returns to step 1 after about a minute instead.
 
 **Updates.** Every six hours the board checks the release page for a newer firmware for
-its screen type. When there is one, its settings page shows **Firmware update** with the
-new version and an **Install** button; the board downloads it over Wi-Fi, shows
-"Updating firmware" and restarts, keeping its settings. Press **Firmware update
-check now** to look straight away. Switch on **Install updates automatically** on the
-same page if you would rather it just did so. This only works
-if the board can reach the internet (github.com). A board flashed before this feature
-existed has to be updated by USB once more.
+its screen type. The **Firmware** section of its page shows the result, with an
+**Install update** button when there is one; the board downloads it over Wi-Fi, shows
+"Updating firmware" and restarts. **Check for updates** looks straight away, and
+**Install updates automatically** makes the board install new versions by itself.
+**Install from a file** uploads a `.ota.bin` you have downloaded. The automatic check
+only works if the board can reach the internet (github.com). A board flashed before
+this feature existed has to be updated by USB once more.
 
-**Which version is it running?** The board's page has a **Firmware version** line, e.g.
+**Do updates keep the settings?** Yes: the Wi-Fi, SetReady address, token and screen
+options stay on the board through an update. (One exception has already happened: the
+update that renamed the address field to "SetReady page address" lost the saved
+address, which has to be typed in once more. The settings keep their internal names
+from now on, so this won't recur.)
+
+**Which version is it running?** The **Firmware** section shows what is **Running**, e.g.
 `2026.11.23-1a2b3c4 (ESP32-2432S028-7789)`: the build date, the commit it was built
 from, and the screen type. The start-up screen shows the version too. The same version
 is in the notes of the release you downloaded from.
@@ -143,13 +149,13 @@ It asks the server every 10 seconds.
 type. Flash one of the other two files listed under "Flash the board". Flashing again
 keeps the Wi-Fi, server and token already entered.
 
-**Upside down.** The published files are built with `rotation: "270"`. For the other
-way up, build it yourself with `rotation: "90"` and both `touch_mirror_x` and
-`touch_mirror_y` set to `"false"` at the top of `printer-display.yaml`.
+**Upside down.** On the board's settings page, under **Screen**, tick (or untick)
+**Turn the picture upside down**. The picture turns half a turn straight away, touch follows it, and the board
+remembers the choice, so it can be mounted with the USB sockets on either side.
 
 **Touch calibration.** Wherever you touch the screen, a small white ring appears for a
 moment at the spot the board thinks you touched. If the ring is somewhere else, the touch
-settings need adjusting: flip `touch_mirror_x` or `touch_mirror_y` at the top of
+settings need adjusting: change `touch_mirror_x` or `touch_mirror_y` at the top of
 `printer-display.yaml` if it is mirrored. For fine tuning, the board's own page shows a
 log line for each touch with the raw values; adjust the `calibration` numbers to match
 the corners.
