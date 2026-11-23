@@ -183,6 +183,12 @@ The matching is this page's own estimate, not Watchtower's scheduler:
 
 Watchtower makes the final decision, so treat "load X into Y" as a guide.
 
+### Printer displays
+
+A small touch screen can sit on the front of each printer and show what to load, with a
+Set Ready button. It runs on a cheap ESP32 board with a built-in screen and talks to this
+server with its own per-printer token. See [display/README.md](display/README.md).
+
 ### Layout
 
 The cards arrange themselves from the screen size and the number of printers:
@@ -268,7 +274,9 @@ Private web API, using the Watchtower login:
 | `POST /api/printers/{name}/reread-filament` | Socket.IO event `printer_command` with `{"command":"read_slot_rfid","args":{"ams_index","tray_index"}}`, once per AMS slot |
 
 The server's own calls: `GET`/`POST /api/config` (settings), `GET /api/session`,
-`POST /api/login` and `POST /api/logout` (page password).
+`POST /api/login` and `POST /api/logout` (page password), `GET`/`POST /api/displays`
+(display tokens), and for the displays themselves `GET /api/display` and
+`POST /api/display/set-ready`, authorised by a display token.
 
 The state rules come from ClearCue: offline when `online` is false; printing when
 `busy` (paused or error if a status string says so); ready when `ready`; otherwise the
