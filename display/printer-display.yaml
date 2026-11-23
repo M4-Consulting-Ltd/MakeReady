@@ -15,6 +15,7 @@
 substitutions:
   device_name: printer-display        # each board adds its own suffix, e.g. printer-display-a1b2c3
   refresh: 10s                         # how often to ask the server
+  version: "dev"                       # set by the build to a date and commit, e.g. 2026.11.23-1a2b3c4
   # Screen type. These boards ship with one of three screens that look the same:
   #   ESP32-2432S028       ILI9341  (usually the single micro-USB board)
   #   ESP32-2432S028-7789  ST7789   (usually the micro-USB + USB-C board)
@@ -162,6 +163,13 @@ text_sensor:
   - platform: template
     id: wifi_change
     name: "Wi-Fi change: result"
+  # Which firmware this board is running, and for which screen type.
+  - platform: template
+    id: fw_version
+    name: Firmware version
+    icon: mdi:tag
+    update_interval: 1h
+    lambda: return {"${version} (${screen_model})"};
 
 # What the server last told us to show.
 globals:
@@ -415,8 +423,9 @@ display:
         it.print(160, 116, id(f_text), MUTED, TextAlign::CENTER, "Printer display");
         it.print(160, 164, id(f_text), GREEN, TextAlign::CENTER,
                  online ? "Contacting server..." : "Connecting to Wi-Fi...");
-        it.print(160, 216, id(f_small), MUTED, TextAlign::CENTER,
+        it.print(160, 204, id(f_small), MUTED, TextAlign::CENTER,
                  fit(std::string(App.get_name().c_str()), id(f_small), 300).c_str());
+        it.print(160, 224, id(f_small), MUTED, TextAlign::CENTER, "Version ${version}");
         return;
       }
 
