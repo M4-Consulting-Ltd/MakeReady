@@ -264,7 +264,7 @@ Full instructions, troubleshooting and how to build the firmware yourself are in
 ### What a display can do
 
 Each token is tied to one printer. With it, a board can read that printer's summary and
-send Set Ready for it, and nothing else: no other printers, no cameras, no settings, no
+send Set Ready for it or take it back, and nothing else: no other printers, no cameras, no settings, no
 pause or stop. Tokens are stored hashed and can be revoked in Settings. The board's own
 settings page has no login, so anyone on your Wi-Fi can change a board's server address,
 token or firmware.
@@ -351,7 +351,7 @@ Private web API, using the Watchtower login:
 The server's own calls: `GET`/`POST /api/config` (settings), `GET /api/session`,
 `POST /api/login` and `POST /api/logout` (page password), `GET`/`POST /api/displays`
 (display tokens), and for the displays themselves `GET /api/display` and
-`POST /api/display/set-ready`, authorised by a display token.
+`POST /api/display/set-ready` and `POST /api/display/not-ready`, authorised by a display token.
 
 The state rules come from ClearCue: offline when `online` is false; printing when
 `busy` (paused or error if a status string says so); ready when `ready`; otherwise the

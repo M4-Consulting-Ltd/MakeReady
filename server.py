@@ -841,9 +841,9 @@ def set_not_ready(printer):
             _sio(opener, url, b"40")
             _sio(opener, url, ("42" + json.dumps(["printer_set_ready", {
                 "printer_name": printer, "ready": False, "source": "setready"}])).encode())
-            for _ in range(2):                               # let it land; spot a refusal
+            for _ in range(1):                               # let it land; spot a refusal
                 try:
-                    text = _sio(opener, url, timeout=2)
+                    text = _sio(opener, url, timeout=1.5)
                 except OSError:
                     break
                 if any(pk.startswith("44") for pk in text.split("\x1e")):
@@ -1100,6 +1100,7 @@ def display_summary(name):
            "job": "", "fil": [], "warn": "", "button": "",
            "pct": -1, "left": "", "done": "",             # progress bar and big times
            "bar": "",                                     # wording for the bar, when not printing
+           "undo": False,                                 # offer "Not ready" (takes Set Ready back)
            "queue": [], "more": 0}                        # second page: waiting jobs
     printers, err = printers_cached()
     p = next((x for x in printers if x.get("name") == name), None)
@@ -1160,6 +1161,8 @@ def display_summary(name):
         out.update(status="Receiving job", head="Receiving job:", good=True, job=got["name"],
                    fil=[], warn="", button="", pct=-1 if pct is None else pct,
                    bar="RECEIVING" if pct is None else "RECEIVING %d%%" % pct)
+    # Ready with no job on its way yet: Set Ready can still be taken back.
+    out["undo"] = bool(state == "ready" and not got and all(cam_creds()) and root_url())
     # While the printer is busy the display shows nothing about waiting jobs: what to load
     # only matters once the print is done. (The web page still shows it on busy printers.)
     # The display's font only has plain ASCII: swap the common extras, drop the rest.
@@ -1290,6 +1293,15 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 PRINTERS["at"] = 0                           # show the new state straight away
             self.send(status, body or b"{}", retry_after=ra)
+            return
+        if parts == ["", "api", "display", "not-ready"]:
+            # From a printer display: take Set Ready back, only for the token's own printer.
+            name = display_printer(self.headers)
+            if name is None:
+                self.send(401, b'{"error":"Unknown display token"}')
+                return
+            status, out = set_not_ready(name)
+            self.send(status, json.dumps(out).encode())
             return
         if not self.authed():
             self.send(401, b'{"error":"Log in to use this page.","login":true}')
