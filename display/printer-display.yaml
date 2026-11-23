@@ -295,11 +295,18 @@ globals:
   - {id: g_page_at, type: uint32_t,   initial_value: "0"}     # when the queue page was opened
   - {id: g_q_n,     type: int,        initial_value: "0"}
   - {id: g_q_more,  type: int,        initial_value: "0"}
-  - {id: g_q_name,  type: "std::array<std::string, 5>"}
-  - {id: g_q_time,  type: "std::array<std::string, 5>"}
-  - {id: g_q_ok,    type: "std::array<bool, 5>"}
-  - {id: g_q_ncol,  type: "std::array<int, 5>"}
-  - {id: g_q_col,   type: "std::array<std::array<uint32_t, 4>, 5>"}
+  - {id: g_q_name,  type: "std::array<std::string, 8>"}
+  - {id: g_q_time,  type: "std::array<std::string, 8>"}
+  - {id: g_q_ok,    type: "std::array<bool, 8>"}
+  - {id: g_q_ncol,  type: "std::array<int, 8>"}
+  - {id: g_q_col,   type: "std::array<std::array<uint32_t, 4>, 8>"}
+  # Each job's filaments, for the page a tap on a job opens.
+  - {id: g_q_fn,    type: "std::array<int, 8>"}
+  - {id: g_q_fx,    type: "std::array<int, 8>"}                # filaments beyond the four shown
+  - {id: g_q_ft,    type: "std::array<std::array<std::string, 4>, 8>"}
+  - {id: g_q_fok,   type: "std::array<std::array<bool, 4>, 8>"}
+  - {id: g_q_top,   type: int,        initial_value: "0"}     # first job shown in the list
+  - {id: g_q_sel,   type: int,        initial_value: "-1"}    # job opened, -1 = the list
   # Swipe tracking: where the finger went down and where it was last seen.
   - {id: g_sw_x0,   type: int,        initial_value: "0"}
   - {id: g_sw_y0,   type: int,        initial_value: "0"}
@@ -390,9 +397,12 @@ script:
                           }
                           id(g_fil_n) = n;
                           int q = 0;
-                          JsonArray jobs = root["queue"];
+                          // "jobs" is the longer list with each job's filaments; a server
+                          // from before that only sends "queue".
+                          bool full = !root["jobs"].isNull();
+                          JsonArray jobs = full ? root["jobs"] : root["queue"];
                           for (JsonObject j : jobs) {
-                            if (q >= 5) break;
+                            if (q >= 8) break;
                             id(g_q_name)[q] = j["n"] | "";
                             id(g_q_time)[q] = j["t"] | "";
                             id(g_q_ok)[q] = j["ok"] | false;
@@ -404,10 +414,22 @@ script:
                               id(g_q_col)[q][k++] = strlen(hex) == 6 ? strtoul(hex, nullptr, 16) : 0x808080;
                             }
                             id(g_q_ncol)[q] = k;
+                            int m = 0;
+                            JsonArray need = j["f"];
+                            for (JsonObject f : need) {
+                              if (m >= 4) break;
+                              id(g_q_ft)[q][m] = f["t"] | "";
+                              id(g_q_fok)[q][m] = f["ok"] | false;
+                              m++;
+                            }
+                            id(g_q_fn)[q] = m;
+                            id(g_q_fx)[q] = j["x"] | 0;
                             q++;
                           }
                           id(g_q_n) = q;
-                          id(g_q_more) = root["more"] | 0;
+                          id(g_q_more) = full ? (root["jmore"] | 0) : (root["more"] | 0);
+                          if (id(g_q_sel) >= q) id(g_q_sel) = -1;
+                          if (id(g_q_top) >= q) id(g_q_top) = 0;
                           return true;
                         });
                         id(g_ok) = parsed;
@@ -614,8 +636,35 @@ display:
           it.print(160, 120, id(f_text), MUTED, TextAlign::CENTER, "No jobs waiting");
           it.print(160, 146, id(f_small), MUTED, TextAlign::CENTER, "for this printer");
         }
-        for (int i = 0; i < id(g_q_n); i++) {
-          int y = 44 + i * 44;
+        // A job was tapped: what it needs, and whether this printer has each one loaded.
+        if (id(g_q_sel) >= 0 && id(g_q_sel) < id(g_q_n)) {
+          int s = id(g_q_sel);
+          bool ok = id(g_q_ok)[s];
+          it.print(12, 44, id(f_text), TEXT, fit(id(g_q_name)[s], id(f_text), 296).c_str());
+          std::string line = ok ? "Ready to run here" : "Needs filament loading";
+          if (!id(g_q_time)[s].empty()) line += "  -  " + id(g_q_time)[s];
+          it.print(12, 68, id(f_small), ok ? GREEN : RED, line.c_str());
+          if (id(g_q_fn)[s] == 0)
+            it.print(12, 100, id(f_small), MUTED, "No filament details for this job");
+          for (int k = 0; k < id(g_q_fn)[s]; k++) {
+            int y = 96 + k * 30;
+            uint32_t c = k < id(g_q_ncol)[s] ? id(g_q_col)[s][k] : 0x808080;
+            bool have = id(g_q_fok)[s][k];
+            it.filled_circle(22, y + 11, 9, Color((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF));
+            it.circle(22, y + 11, 9, MUTED);
+            it.print(312, y + 3, id(f_small), have ? GREEN : RED, TextAlign::TOP_RIGHT, have ? "loaded" : "LOAD");
+            it.print(40, y, id(f_text), TEXT, fit(id(g_q_ft)[s][k], id(f_text), 210).c_str());
+          }
+          it.print(160, 221, id(f_small), MUTED, TextAlign::TOP_CENTER,
+                   id(g_q_fx)[s] > 0 ? ("+" + std::to_string(id(g_q_fx)[s]) + " more filaments   tap to go back").c_str()
+                                     : "Tap to go back");
+          return;
+        }
+        // The list, four at a time. Tap a job to open it; tap the bottom line (or swipe
+        // up or down) for the next four.
+        int top = id(g_q_top);
+        for (int i = top; i < id(g_q_n) && i < top + 4; i++) {
+          int y = 44 + (i - top) * 44;
           Color edge = id(g_q_ok)[i] ? GREEN : RED;          // has the filament / needs loading
           it.filled_rectangle(4, y + 2, 4, 38, edge);
           int tw = 0, x1, y1, th;
@@ -631,9 +680,16 @@ display:
           }
           it.print(100, y + 23, id(f_small), edge, id(g_q_ok)[i] ? "ready to run" : "needs filament");
         }
-        if (id(g_q_more) > 0)
-          it.print(160, 44 + id(g_q_n) * 44 + 1, id(f_small), MUTED, TextAlign::TOP_CENTER,
+        int total = id(g_q_n) + id(g_q_more);
+        if (id(g_q_n) > 4) {
+          int last = top + 4 < id(g_q_n) ? top + 4 : id(g_q_n);
+          it.print(160, 221, id(f_small), MUTED, TextAlign::TOP_CENTER,
+                   (std::to_string(top + 1) + "-" + std::to_string(last) + " of " + std::to_string(total) +
+                    "   tap here for more").c_str());
+        } else if (id(g_q_more) > 0) {
+          it.print(160, 221, id(f_small), MUTED, TextAlign::TOP_CENTER,
                    ("+" + std::to_string(id(g_q_more)) + " more").c_str());
+        }
         return;
       }
 
@@ -747,10 +803,30 @@ touchscreen:
       - lambda: |-
           int dx = id(g_sw_x) - id(g_sw_x0), dy = id(g_sw_y) - id(g_sw_y0);
           bool swipe = abs(dx) > 60 && abs(dy) < 60;
-          bool tap_bar = abs(dx) < 20 && abs(dy) < 20 && id(g_sw_y0) < 40;
-          if (id(g_setup) == 0 && id(g_ok) && (swipe || tap_bar)) {
+          bool tap = abs(dx) < 20 && abs(dy) < 20;
+          bool tap_bar = tap && id(g_sw_y0) < 40;
+          if (id(g_setup) != 0 || !id(g_ok)) return;
+          if (swipe || tap_bar) {
             id(g_page) = id(g_page) == 0 ? 1 : 0;
             id(g_page_at) = millis();
+            id(g_q_sel) = -1;
+            id(g_q_top) = 0;
+          } else if (id(g_page) == 1) {
+            // On the queue page: a tap opens a job (and any tap closes it again); the
+            // bottom line, or a swipe up or down, moves through the list four at a time.
+            int n = id(g_q_n), top = id(g_q_top);
+            bool up = dy < -60 && abs(dx) < 60, down = dy > 60 && abs(dx) < 60;
+            if (id(g_q_sel) >= 0) {
+              if (tap) id(g_q_sel) = -1;
+            } else if ((tap && id(g_sw_y0) >= 220 && n > 4) || up) {
+              id(g_q_top) = top + 4 < n ? top + 4 : (up ? top : 0);
+            } else if (down) {
+              id(g_q_top) = top >= 4 ? top - 4 : 0;
+            } else if (tap && id(g_sw_y0) >= 44) {
+              int row = top + (id(g_sw_y0) - 44) / 44;
+              if (row < n && row < top + 4) id(g_q_sel) = row;
+            }
+            id(g_page_at) = millis();          // still in use: don't flip back yet
           }
       - component.update: screen
 

@@ -137,10 +137,18 @@ only making one.
 ### The queue page
 
 Swipe left or right across the screen, or tap the top bar, to see the jobs waiting for
-this printer: up to four, in Watchtower's order. Each shows its name, print time, the
-colours it needs, and a green "ready to run" or red "needs filament" depending on what
-this printer has loaded. Swipe or tap again to go back; it returns by itself after 30
-seconds. Two small dots in the top bar show which page you are on.
+this printer, in Watchtower's order (up to eight; jobs for other printer models are left
+out). Each shows its name, print time, the colours it needs, and a green "ready to run"
+or red "needs filament" depending on what this printer has loaded. They are listed four
+at a time: tap the bottom line, or swipe up or down, for the rest.
+
+**Tap a job** to see the filaments it needs: colour, name, weight and material for each,
+marked "loaded" in green if this printer has it or "LOAD" in red if it doesn't. Tap
+again to go back to the list.
+
+Swipe sideways or tap the top bar to return to the printer page; it also returns by
+itself after 30 seconds without a touch. Two small dots in the top bar show which page
+you are on.
 
 It asks the server every 10 seconds.
 
