@@ -138,6 +138,11 @@
   .needs b { font-weight: 600; color: var(--red); }
   .needs b.good { color: var(--green); }
   .loaded:empty, .needs:empty { display: none; }
+  .recv { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+  .recv i { display: block; height: 100%; background: var(--green); border-radius: 4px; }
+  .recv i.busy { width: 35%; animation: recv 1.4s ease-in-out infinite alternate; }
+  @keyframes recv { from { margin-left: 0; } to { margin-left: 65%; } }
+  @media (prefers-reduced-motion: reduce) { .recv i.busy { animation: none; width: 100%; opacity: .5; } }
   #queue { max-width: var(--page); margin: 0 auto; padding: 0 16px 32px; }
   .qhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
            gap: 4px 16px; margin-bottom: 10px; }
@@ -771,6 +776,18 @@ function renderCardFilament(name, c) {
       if (rereading.has(name)) loaded.append(' Re-reading…');
       loaded.append(btn);
     }
+  }
+  const got = (q.sending || {})[name];
+  if (got) {
+    // Watchtower is sending a job to this printer: nothing to do but wait.
+    needs.append(el('b', 'good', 'Receiving a job' + (got.pct == null ? '…' : ' ' + got.pct + '%')),
+                 el('div', '', got.name));
+    const bar = el('div', 'recv');
+    const fill = el('i', got.pct == null ? 'busy' : '');
+    if (got.pct != null) fill.style.width = got.pct + '%';
+    bar.append(fill);
+    needs.append(bar);
+    return;
   }
   if (c.state === 'plate' || c.state === 'ready') {
     // Jobs this printer could take: unassigned ones for its model, or ones assigned to it.

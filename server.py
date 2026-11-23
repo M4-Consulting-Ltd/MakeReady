@@ -392,6 +392,32 @@ QUEUE_PATH = ("/api/queue?status=queued&status=waiting_filament&status=assigned"
               "&status=held&limit=200")
 
 
+# Jobs Watchtower is sending to a printer right now (its "dispatching" status).
+SENDING_PATH = "/api/queue?status=dispatching&limit=50"
+
+
+def sending_jobs(queue, table):
+    """{printer name: {"name": job, "pct": 0-100 or None}} for jobs being sent to a printer."""
+    out = {}
+    for j in queue.get("jobs") or []:
+        if str(j.get("status") or "").lower() != "dispatching" or not j.get("printer_id"):
+            continue
+        md = j.get("metadata") or {}
+        who = str(j["printer_id"])
+        who = (table.get(who) or {}).get("name") or who
+        pct = None
+        for src in (j, md):                      # a progress figure, if Watchtower gives one
+            for key, value in src.items():
+                k = str(key).lower()
+                if (("progress" in k or "percent" in k)
+                        and any(w in k for w in ("upload", "dispatch", "transfer", "send"))
+                        and isinstance(value, (int, float)) and not isinstance(value, bool)
+                        and 0 <= value <= 100):
+                    pct = round(value)
+        out[who] = {"name": _job_name(j, md), "pct": pct}
+    return out
+
+
 def _unwrap(reply):
     return reply.get("data", reply) if isinstance(reply, dict) else reply
 
@@ -833,21 +859,29 @@ def reread_filament(printer):
 def queue_data(fresh=False):
     """fresh: skip the short cache (the page's Refresh button), but not more than every 2 s."""
     if not (all(cam_creds()) and root_url()):
-        return {"enabled": False, "error": "", "jobs": [], "loaded": {}, "needs": {}}
+        return {"enabled": False, "error": "", "jobs": [], "loaded": {}, "needs": {},
+                "sending": {}}
     now = time.time()
     with CAM_LOCK:
         if CAM["queue"] is not None and now - CAM["queue_at"] < (2 if fresh else QUEUE_TTL):
             return CAM["queue"]
         if now < CAM["retry_at"]:
-            return {"enabled": True, "error": CAM["error"], "jobs": [], "loaded": {}, "needs": {}}
+            return {"enabled": True, "error": CAM["error"], "jobs": [], "loaded": {}, "needs": {},
+                    "sending": {}}
     try:
         queue = _unwrap(json.loads(cam_fetch(QUEUE_PATH)))
         assignments = _unwrap(json.loads(cam_fetch("/api/filament/assignments")))
         out = build_queue(queue if isinstance(queue, dict) else {},
                           assignments if isinstance(assignments, dict) else {}, printer_table())
-        out.update(enabled=True, error="")
+        out.update(enabled=True, error="", sending={})
+        try:                                     # extra: never let this break the queue view
+            sending = _unwrap(json.loads(cam_fetch(SENDING_PATH)))
+            if isinstance(sending, dict):
+                out["sending"] = sending_jobs(sending, printer_table())
+        except Exception:
+            pass
     except Exception as e:
-        out = {"enabled": True, "jobs": [], "loaded": {}, "needs": {},
+        out = {"enabled": True, "jobs": [], "loaded": {}, "needs": {}, "sending": {},
                "error": "Queue unavailable: %s." % (getattr(e, "reason", None) or e)}
     with CAM_LOCK:
         CAM.update(queue=out, queue_at=time.time())
@@ -998,6 +1032,7 @@ def display_summary(name):
     out = {"title": name, "state": "unknown", "status": "", "sub": "", "head": "", "good": False,
            "job": "", "fil": [], "warn": "", "button": "",
            "pct": -1, "left": "", "done": "",             # progress bar and big times
+           "bar": "",                                     # wording for the bar, when not printing
            "queue": [], "more": 0}                        # second page: waiting jobs
     printers, err = printers_cached()
     p = next((x for x in printers if x.get("name") == name), None)
@@ -1051,6 +1086,13 @@ def display_summary(name):
                        fil=[{"t": _fil_text(j["filaments"][i]),
                              "c": (j["filaments"][i].get("color") or "").lstrip("#")}
                             for i in j["missing_by"][name]][:4])
+    # A job on its way to this printer replaces any advice: nothing to do but wait.
+    got = (q.get("sending") or {}).get(name)
+    if got and state != "offline":
+        pct = got.get("pct")
+        out.update(status="Receiving job", head="Receiving job:", good=True, job=got["name"],
+                   fil=[], warn="", button="", pct=-1 if pct is None else pct,
+                   bar="RECEIVING" if pct is None else "RECEIVING %d%%" % pct)
     # While the printer is busy the display shows nothing about waiting jobs: what to load
     # only matters once the print is done. (The web page still shows it on busy printers.)
     # The display's font only has plain ASCII: swap the common extras, drop the rest.
