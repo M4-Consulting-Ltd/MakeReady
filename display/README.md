@@ -3,7 +3,7 @@
 A small touch screen for the front of one printer. It shows the printer's state, what
 filament to load for the next waiting job, and a **Set Ready** button.
 
-![Four example screens: load a filament, Set Ready picks up a job with a low-filament warning, printing, and paused](../docs/display-preview.png)
+![Four example screens: printing with time left and a progress bar, printing with filament to load, load a filament before Set Ready, and Set Ready picks up a job](../docs/display-preview.png)
 
 *Mock-up of the layout with sample data.*
 
@@ -81,7 +81,11 @@ only making one.
 
 - **Top bar:** the printer's name and a dot: green when ready, red when printing, paused
   or waiting to be cleared, amber when offline.
-- **Status:** e.g. "Printing 26%", with time left and finish time.
+- **While printing:** the estimated time left and the estimated completion time in
+  large type, and a bar along the bottom reading "PRINTING 28%" that fills with green
+  as the print goes on. If there is filament to load for a waiting job, the times shrink
+  to one line to make room for it.
+- **Otherwise, a status line:** e.g. "Plate needs clearing" or "Paused or error".
 - **Advice:**
   - "Load for next job:" with the job and the filament to load, each with a colour dot.
   - "Set Ready picks up:" with the job, when the loaded filament already covers one.
@@ -108,13 +112,16 @@ It asks the server every 10 seconds.
 type. Flash one of the other two files listed under "Flash the board". Flashing again
 keeps the Wi-Fi, server and token already entered.
 
-**Upside down.** Build it yourself with `rotation: "270"` at the top of
-`printer-display.yaml` (the published files use 90).
+**Upside down.** The published files are built with `rotation: "270"`. For the other
+way up, build it yourself with `rotation: "90"` and both `touch_mirror_x` and
+`touch_mirror_y` set to `"false"` at the top of `printer-display.yaml`.
 
-**Touch calibration.** If the button doesn't respond where it is drawn, flip `mirror_x`
-or `mirror_y` under the touchscreen's `transform` first. For fine tuning, watch the log
-(`esphome logs printer-display.yaml`, or the **Logs** button on web.esphome.io) while pressing the corners and adjust the `calibration`
-numbers to the raw values it reports.
+**Touch calibration.** Wherever you touch the screen, a small white ring appears for a
+moment at the spot the board thinks you touched. If the ring is somewhere else, the touch
+settings need adjusting: flip `touch_mirror_x` or `touch_mirror_y` at the top of
+`printer-display.yaml` if it is mirrored. For fine tuning, the board's own page shows a
+log line for each touch with the raw values; adjust the `calibration` numbers to match
+the corners.
 
 ## Who can change a board's settings
 

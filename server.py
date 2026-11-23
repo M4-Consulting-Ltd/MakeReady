@@ -996,7 +996,8 @@ def _fil_text(f):
 def display_summary(name):
     """Everything a printer's display shows, already worded and trimmed for a small screen."""
     out = {"title": name, "state": "unknown", "status": "", "sub": "", "head": "", "good": False,
-           "job": "", "fil": [], "warn": "", "button": ""}
+           "job": "", "fil": [], "warn": "", "button": "",
+           "pct": -1, "left": "", "done": ""}             # progress bar and big times
     printers, err = printers_cached()
     p = next((x for x in printers if x.get("name") == name), None)
     if p is None:
@@ -1005,14 +1006,16 @@ def display_summary(name):
     state = printer_state(p)
     out["state"], out["status"] = state, STATUS_TEXT[state]
     if state == "printing" and isinstance(p.get("progress"), (int, float)):
-        pct = p["progress"] * 100 if p["progress"] <= 1 else p["progress"]
-        out["status"] += " %d%%" % round(pct)
+        out["pct"] = max(0, min(100, round(p["progress"])))   # Watchtower reports 0-100
+        out["status"] += " %d%%" % out["pct"]
     mins = p.get("eta_minutes")
     if state in ("printing", "paused") and isinstance(mins, (int, float)) and mins >= 0:
         mins = round(mins)
-        out["sub"] = ("%dh %dm left" % divmod(mins, 60)) if mins >= 60 else "%dm left" % mins
+        out["left"] = ("%dh %dm" % divmod(mins, 60)) if mins >= 60 else "%dm" % mins
+        out["sub"] = out["left"] + " left"
         if state == "printing":
-            out["sub"] += time.strftime(", done %H:%M", time.localtime(time.time() + mins * 60))
+            out["done"] = time.strftime("%H:%M", time.localtime(time.time() + mins * 60))
+            out["sub"] += ", done " + out["done"]
     if state == "plate":
         out["button"] = "SET READY"
 
