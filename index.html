@@ -667,7 +667,7 @@ function swatch(f) {
 function chipText(f) {
   const text = f.name ? f.name + ' ' + filamentLabel(f) : filamentLabel(f);
   // Weight the job uses, when known (job filaments only): "Gold PLA Basic (15g)".
-  if (typeof f.grams !== 'number') return text;
+  if (typeof f.grams !== 'number' || f.grams <= 0) return text;      // no weight known
   return text + ' (' + (f.grams > 0 && f.grams < 1 ? '<1' : Math.round(f.grams)) + 'g)';
 }
 function chip(f, missing) {
@@ -726,13 +726,14 @@ const jobOk = j => !j.best && (j.printer || j.ready.length);   // a printer has 
 //  - Idle printer (plate waiting, or ready): the advice is about this printer. Either a
 //    waiting job can run on it as it is, or we show the least it would take to run one.
 //  - Busy printer: only flagged when it is the closest fit for a job no printer can run.
-// The waiting job an idle printer would take: the oldest one its loaded filament covers.
+// The waiting job an idle printer would take: the highest one in Watchtower's queue that
+// its loaded filament covers.
 function pickupJob(name) {
   const q = lastQueue;
   return ((q && q.jobs) || [])
     .filter(j => j.missing_by && j.missing_by[name] && !j.missing_by[name].length &&
                  (!j.printer || j.printer === name))
-    .sort((a, b) => (a.created || '').localeCompare(b.created || '') || a.order - b.order)[0];
+    .sort((a, b) => a.order - b.order || (a.created || '').localeCompare(b.created || ''))[0];
 }
 // Filaments the printer has, but less of than the job uses: ["Red PLA Basic: needs 156g, about 100g left"]
 function shortages(j, name) {
@@ -775,9 +776,10 @@ function renderCardFilament(name, c) {
     // Jobs this printer could take: unassigned ones for its model, or ones assigned to it.
     const mine = (q.jobs || []).filter(j => j.missing_by && j.missing_by[name] &&
                                             (!j.printer || j.printer === name))
-                               // oldest first: longest-waiting job wins a tie
-                               .sort((a, b) => (a.created || '').localeCompare(b.created || '') ||
-                                               a.order - b.order);
+                               // Watchtower's queue order, top first (drag a job up there
+                               // and it becomes the one this card talks about)
+                               .sort((a, b) => a.order - b.order ||
+                                               (a.created || '').localeCompare(b.created || ''));
     if (!mine.length) return;
     const runnable = mine.filter(j => !j.missing_by[name].length);
     if (runnable.length) {
@@ -790,8 +792,8 @@ function renderCardFilament(name, c) {
       if (low.length) needs.append(el('b', '', 'Not enough filament loaded'),
                                    el('div', '', low.join('; ')));
     } else {
-      // Closest match first (fewest filaments to load); among equals, the oldest job.
-      const j = mine.reduce((a, b) => b.missing_by[name].length < a.missing_by[name].length ? b : a);
+      // Nothing can run as loaded: say what the job highest in the queue needs.
+      const j = mine[0];
       const chips = el('div', 'chips');
       chips.append(...j.missing_by[name].map(i => chip(j.filaments[i], true)));
       needs.append(el('b', '', 'No waiting job can run here yet'),
