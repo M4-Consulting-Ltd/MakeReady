@@ -3,8 +3,8 @@
 # A small touch screen for the front of one printer. It shows the printer's state, what
 # filament to load for the next waiting job, and a Set Ready button (hold to press).
 #
-# Board: ESP32-2432S028 / ESP32-2432S028R ("Cheap Yellow Display"), 2.8" 320x240,
-#        the single micro-USB version with an ILI9341 screen.
+# Board: ESP32-2432S028 / ESP32-2432S028R ("Cheap Yellow Display"), 2.8" 320x240.
+#        Three screen types exist; see screen_model below.
 #
 # Nothing needs editing. After flashing, the board sets itself up:
 #   1. It starts its own Wi-Fi network; join it from a phone and choose your Wi-Fi.
@@ -15,6 +15,12 @@
 substitutions:
   device_name: printer-display        # each board adds its own suffix, e.g. printer-display-a1b2c3
   refresh: 10s                         # how often to ask the server
+  # Screen type. These boards ship with one of three screens that look the same:
+  #   ESP32-2432S028       ILI9341  (usually the single micro-USB board)
+  #   ESP32-2432S028-7789  ST7789   (usually the micro-USB + USB-C board)
+  #   ESP32-2432S028-9342  ILI9342  (some micro-USB + USB-C boards)
+  screen_model: ESP32-2432S028
+  rotation: "90"                       # 90 or 270: which way up the landscape picture is
   # Optional: bake values in at build time instead of entering them on the board.
   default_server: ""
   default_token: ""
@@ -248,22 +254,15 @@ font:
   - {file: "gfonts://Roboto",     id: f_small, size: 15}
 
 display:
-  - platform: ili9xxx
+  - platform: mipi_spi
     id: screen
-    model: ILI9341
+    model: ${screen_model}             # sets the screen type and its pins
     spi_id: tft_spi
-    cs_pin: GPIO15
-    dc_pin: GPIO2
-    invert_colors: false
-    color_palette: 8BIT                # 16-bit needs more memory than this board has free
-    update_interval: 250ms             # quick enough to show the button being held
-    dimensions:
-      width: 320
-      height: 240
-    transform:                         # landscape, USB port on the right
-      swap_xy: true
-      mirror_x: false
-      mirror_y: false
+    rotation: ${rotation}
+    color_depth: 16
+    buffer_size: 25%                   # full colour without needing memory for a whole frame
+    data_rate: 20MHz
+    update_interval: 500ms
     lambda: |-
       const Color BG(17, 19, 23), CARD(27, 30, 36), TEXT(236, 238, 242), MUTED(154, 163, 178);
       const Color GREEN(53, 183, 101), RED(239, 83, 80), AMBER(240, 162, 46), GO(28, 143, 69);
