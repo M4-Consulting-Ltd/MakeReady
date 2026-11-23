@@ -99,7 +99,10 @@
                       opacity: 1; cursor: pointer; }
   .card button.mini:hover { border-color: var(--text); filter: none; }
   .card button.mini svg { width: 20px; height: 20px; fill: currentColor; }
-  .printing button.mini, .paused button.stop { display: grid; }
+  .printing button.pause, .printing button.stop, .paused button.stop { display: grid; }
+  .card button.unready { width: auto; padding: 0 14px; font-size: 14px; font-weight: 600; }
+  .ready button.unready { display: grid; }
+  .card button.unready[hidden] { display: none; }
   .card.sending button.mini { opacity: .4; cursor: progress; }
   button.danger { background: var(--red); color: #fff; border-color: var(--red); }
   #confirm p { margin: 0 0 16px; color: var(--muted); font-size: 15px; }
@@ -417,13 +420,17 @@ function render(printers) {
         '<button type="button" class="mini pause"><svg viewBox="0 0 20 20" aria-hidden="true">' +
         '<rect x="4" y="3" width="4.5" height="14" rx="1"/><rect x="11.5" y="3" width="4.5" height="14" rx="1"/></svg></button>' +
         '<button type="button" class="mini stop"><svg viewBox="0 0 20 20" aria-hidden="true">' +
-        '<rect x="3.5" y="3.5" width="13" height="13" rx="2"/></svg></button></div>' +
+        '<rect x="3.5" y="3.5" width="13" height="13" rx="2"/></svg></button>' +
+        '<button type="button" class="mini unready">Not ready</button></div>' +
         '<div class="msg" role="status"></div>';
       el.querySelector('.name').textContent = p.name;
       el.querySelector('.cam').alt = 'Camera: ' + p.name;
       el.querySelector('.main').addEventListener('click', () => press(p.name));
       el.querySelector('.pause').addEventListener('click', () => askThenSend(p.name, 'pause'));
       el.querySelector('.stop').addEventListener('click', () => askThenSend(p.name, 'stop'));
+      // Ready by mistake (plate not actually clear): take it back before a job is sent.
+      el.querySelector('.unready').addEventListener('click', () => send(p.name, 'not-ready'));
+      el.querySelector('.unready').setAttribute('aria-label', 'Set ' + p.name + ' not ready');
       el.querySelector('.pause').setAttribute('aria-label', 'Pause the print on ' + p.name);
       el.querySelector('.stop').setAttribute('aria-label', 'Stop the print on ' + p.name);
       c = { el, state: null };
@@ -611,6 +618,7 @@ async function send(name, action) {
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     if (!r.ok) throw new Error(explain(r.status, await r.text()));
     if (action === 'set-ready') pending.set(name, Date.now() + 15000);
+    if (action === 'not-ready') pending.delete(name);
   } catch (e) {
     errors.set(name, { state, text: e instanceof TypeError ? "Can't reach the SetReady server." : e.message });
   }
@@ -778,6 +786,7 @@ function renderCardFilament(name, c) {
     }
   }
   const got = (q.sending || {})[name];
+  c.el.querySelector('.unready').hidden = !!got;     // too late once a job is on its way
   if (got) {
     // Watchtower is sending a job to this printer: nothing to do but wait.
     needs.append(el('b', 'good', 'Receiving a job' + (got.pct == null ? '…' : ' ' + got.pct + '%')),
