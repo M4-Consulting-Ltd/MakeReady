@@ -470,6 +470,128 @@ def _matches(need, slot, tolerance):
     return color_distance(need["color"], slot["color"]) <= tolerance
 
 
+# ---- Colour names ----------------------------------------------------------------------
+# A job only gives each filament's colour as a code. People need a word, so a name is
+# found in this order: a spool loaded on the farm, a spool in Watchtower's inventory,
+# Bambu Lab's own colour chart, and finally a plain description ("Orange", "Dark grey").
+
+# Bambu Lab's published colours, by sub-type. Used only when the code matches closely.
+BAMBU_COLOURS = {
+    "basic": {
+        "FFFFFF": "Jade White", "000000": "Black", "C12E1F": "Red", "FF6A13": "Orange",
+        "F4EE2A": "Yellow", "00AE42": "Bambu Green", "3F8E43": "Mistletoe Green",
+        "0A2989": "Blue", "0086D6": "Cyan", "5E43B7": "Purple", "EC008C": "Magenta",
+        "F55A74": "Pink", "E4BD68": "Gold", "A6A9AA": "Silver", "8E9089": "Gray",
+        "F7E6DE": "Beige", "9D432C": "Brown", "6F5034": "Cocoa Brown", "847D48": "Bronze",
+        "D1D3D5": "Light Gray", "545454": "Dark Gray", "F5547C": "Hot Pink",
+        "FF9016": "Pumpkin Orange", "FEC600": "Sunflower Yellow", "00B1B7": "Turquoise",
+        "482960": "Indigo Purple", "5B6579": "Blue Grey", "BECF00": "Bright Green",
+        "9D2235": "Maroon Red", "0056B8": "Cobalt Blue",
+    },
+    "matte": {
+        "FFFFFF": "Ivory White", "000000": "Charcoal", "DE4343": "Scarlet Red",
+        "F7D959": "Lemon Yellow", "F99963": "Mandarin Orange", "E8AFCF": "Sakura Pink",
+        "AE96D4": "Lilac Purple", "61C680": "Grass Green", "A3D8E1": "Ice Blue",
+        "0078BF": "Marine Blue", "E8DBB7": "Desert Tan", "D3B7A7": "Latte Brown",
+        "9B9EA0": "Ash Gray", "042F56": "Dark Blue", "7D6556": "Dark Brown",
+        "68724D": "Dark Green", "BB3D43": "Dark Red", "757575": "Nardo Gray",
+        "CBC6B8": "Bone White", "AE835B": "Caramel", "B15533": "Terracotta",
+        "950051": "Plum", "4D3324": "Dark Chocolate", "C2E189": "Apple Green",
+        "56B7E6": "Sky Blue",
+    },
+}
+SPOOLS_TTL = 300
+SPOOLS = {"at": 0, "list": []}
+
+
+def inventory_spools():
+    """[{color, name, type, variant}] from Watchtower's spool inventory (public API).
+    The reply's exact shape isn't documented, so several field names are accepted."""
+    now = time.time()
+    with LOCK:
+        if now - SPOOLS["at"] < SPOOLS_TTL:
+            return SPOOLS["list"]
+    found = []
+    try:
+        status, body, _ = upstream("GET", "/spools")
+        data = json.loads(body) if status == 200 else {}
+        data = data.get("data", data) if isinstance(data, dict) else data
+        data = data.get("spools") if isinstance(data, dict) else data
+        for sp in data or []:
+            if not isinstance(sp, dict):
+                continue
+            hexc = next((h for h in (_hex(sp.get(k)) for k in
+                                     ("color_hex", "colour_hex", "hex", "color", "colour")) if h), "")
+            name = next((str(sp[k]) for k in ("color_name", "colour_name", "color", "colour", "name")
+                         if sp.get(k) and not _hex(sp.get(k))), "")
+            if hexc and name:
+                found.append({"color": hexc, "name": name[:40],
+                              "type": str(sp.get("material_type") or sp.get("material")
+                                          or sp.get("type") or "").upper(),
+                              "variant": str(sp.get("variant") or sp.get("subtype")
+                                             or sp.get("sub_type") or "")})
+    except Exception:
+        found = []
+    with LOCK:
+        SPOOLS.update(at=time.time(), list=found)
+    return found
+
+
+def plain_colour(hexcolor):
+    """A plain description of a colour: 'Orange', 'Dark grey', 'Light blue'..."""
+    r, g, b = (int(hexcolor[i:i + 2], 16) / 255.0 for i in (1, 3, 5))
+    hi, lo = max(r, g, b), min(r, g, b)
+    light, spread = (hi + lo) / 2, hi - lo
+    sat = 0 if spread == 0 else spread / (1 - abs(2 * light - 1))
+    if sat < 0.15 or spread < 0.08:
+        return ("Black" if light < 0.12 else "Dark grey" if light < 0.4 else "Grey"
+                if light < 0.7 else "Light grey" if light < 0.92 else "White")
+    if hi == r:
+        hue = (60 * ((g - b) / spread)) % 360
+    elif hi == g:
+        hue = 60 * ((b - r) / spread) + 120
+    else:
+        hue = 60 * ((r - g) / spread) + 240
+    if (hue < 15 or hue >= 345) and light < 0.45 and sat < 0.65:
+        return "Brown"                                       # dull dark red
+    warm = 15 <= hue < 70                                    # orange to yellow
+    if warm and (light < 0.45 if hue < 50 else light < 0.3):
+        return "Brown"
+    if warm and sat < 0.5:                                   # washed-out warm colours
+        return "Beige" if light > 0.6 else "Brown"
+    if warm and light > 0.85:
+        return "Beige"
+    name = ("Red" if hue < 15 or hue >= 345 else "Orange" if hue < 45 else "Yellow" if hue < 70
+            else "Green" if hue < 165 else "Turquoise" if hue < 195 else "Blue" if hue < 245
+            else "Purple" if hue < 290 else "Pink")
+    if name == "Red" and light > 0.6:
+        name = "Pink"
+    if name == "Pink":
+        return "Dark pink" if light < 0.3 else name
+    return ("Dark " + name.lower()) if light < 0.3 else ("Light " + name.lower()) \
+        if light > 0.75 else name
+
+
+def colour_name_for(need, loaded):
+    """The best name for a job filament's colour. `loaded` is {printer: [slots]}."""
+    if not need.get("color"):
+        return ""
+    for slots in loaded.values():                            # 1. a spool loaded on the farm
+        for sl in slots:
+            if sl["name"] and sl["color"] and _matches(need, sl, 3):
+                return sl["name"]
+    for sp in inventory_spools():                            # 2. a spool in the inventory
+        if _matches(need, sp, 3):
+            return sp["name"]
+    variant = (need.get("variant") or "").lower()            # 3. Bambu's colour chart
+    charts = [BAMBU_COLOURS[variant]] if variant in BAMBU_COLOURS else list(BAMBU_COLOURS.values())
+    for chart in charts:
+        for hexc, name in chart.items():
+            if color_distance(need["color"], "#" + hexc) <= 3:
+                return name
+    return plain_colour(need["color"])                       # 4. a plain description
+
+
 def _grams_left(a):
     """Grams left on a loaded spool, or None. The printer's own percentage (read from the
     spool's tag) times the spool's full weight; Watchtower's remaining-weight figure is only
@@ -504,11 +626,7 @@ def build_queue(queue, assignments, table):
         loaded[info["name"]] = slots
 
     def colour_name(need):
-        for slots in loaded.values():
-            for sl in slots:
-                if sl["name"] and sl["color"] and need["color"] and _matches(need, sl, 3):
-                    return sl["name"]
-        return ""
+        return colour_name_for(need, loaded)
 
     jobs, needs = [], {}
     for j in queue.get("jobs") or []:
@@ -867,11 +985,12 @@ def printer_state(p):
 
 
 def _fil_text(f):
-    text = " ".join(x for x in (f.get("name"), f.get("type"), f.get("variant")) if x) or "Filament"
+    """Display wording: colour name and weight first (a small screen cuts off the end)."""
     grams = f.get("grams")
-    if isinstance(grams, (int, float)) and grams > 0:
-        text += " %sg" % ("<1" if 0 < grams < 1 else round(grams))
-    return text
+    weight = "%sg" % ("<1" if 0 < grams < 1 else round(grams)) \
+        if isinstance(grams, (int, float)) and grams > 0 else ""
+    kind = " ".join(x for x in (f.get("type"), f.get("variant")) if x)
+    return " ".join(x for x in (f.get("name"), weight, kind) if x) or "Filament"
 
 
 def display_summary(name):
