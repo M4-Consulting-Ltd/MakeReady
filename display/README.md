@@ -26,7 +26,7 @@ its Wi-Fi, server and token after it starts.
 ## 1. Flash the board (once)
 
 1. Download the firmware from the
-   [display-latest release](https://github.com/M4-Consulting-Ltd/Watchtower-SetReady/releases/tag/display-latest).
+   [display-latest release](https://github.com/M4-Consulting-Ltd/MakeReady/releases/tag/display-latest).
    These boards ship with one of three screens that look identical, so there are three
    files. Start with the first; if the picture is scrambled, flash the next one.
 

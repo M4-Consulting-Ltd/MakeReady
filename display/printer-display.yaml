@@ -19,7 +19,7 @@ substitutions:
   # Where the board looks for newer firmware: the published file list for its screen type.
   # file_suffix is "", "-st7789" or "-ili9342" and is set by the build.
   file_suffix: ""
-  update_url: https://github.com/M4-Consulting-Ltd/Watchtower-SetReady/releases/download/display-latest
+  update_url: https://github.com/M4-Consulting-Ltd/MakeReady/releases/download/display-latest
   # Screen type. These boards ship with one of three screens that look the same:
   #   ESP32-2432S028       ILI9341  (usually the single micro-USB board)
   #   ESP32-2432S028-7789  ST7789   (usually the micro-USB + USB-C board)
