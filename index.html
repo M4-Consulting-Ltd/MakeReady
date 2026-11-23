@@ -431,7 +431,7 @@ function render(printers) {
     c.el.querySelector('.model').textContent = p.model || '';
     let label = LABEL[state][0];
     if (state === 'printing' && typeof p.progress === 'number')
-      label += ' ' + Math.round(p.progress <= 1 ? p.progress * 100 : p.progress) + '%';
+      label += ' ' + Math.round(p.progress) + '%';        // Watchtower reports 0-100
     c.el.querySelector('.label').textContent = label;
     c.el.querySelector('.eta').textContent =
       state === 'printing' ? etaText(p, true) : state === 'paused' ? etaText(p, false) : '';

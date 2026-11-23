@@ -15,12 +15,20 @@
 substitutions:
   device_name: printer-display        # each board adds its own suffix, e.g. printer-display-a1b2c3
   refresh: 10s                         # how often to ask the server
+  version: "dev"                       # set by the build to a date and commit, e.g. 2026.11.23-1a2b3c4
+  # Where the board looks for newer firmware: the published file list for its screen type.
+  # file_suffix is "", "-st7789" or "-ili9342" and is set by the build.
+  file_suffix: ""
+  update_url: https://github.com/M4-Consulting-Ltd/Watchtower-SetReady/releases/download/display-latest
   # Screen type. These boards ship with one of three screens that look the same:
   #   ESP32-2432S028       ILI9341  (usually the single micro-USB board)
   #   ESP32-2432S028-7789  ST7789   (usually the micro-USB + USB-C board)
   #   ESP32-2432S028-9342  ILI9342  (some micro-USB + USB-C boards)
   screen_model: ESP32-2432S028
-  rotation: "90"                       # 90 or 270: which way up the landscape picture is
+  rotation: "270"                      # 90 or 270: which way up the landscape picture is
+  # Touch must match the rotation: for 90 use false / false, for 270 use true / true.
+  touch_mirror_x: "true"
+  touch_mirror_y: "true"
   # Optional: bake values in at build time instead of entering them on the board.
   default_server: ""
   default_token: ""
@@ -28,6 +36,9 @@ substitutions:
 esphome:
   name: ${device_name}
   friendly_name: Printer display
+  project:                             # the version the update check compares against
+    name: m4consulting.printer-display
+    version: "${version}"
   name_add_mac_suffix: true            # one firmware for every board, unique names
   on_boot:
     priority: -100
@@ -46,6 +57,13 @@ logger:
 
 ota:
   - platform: esphome
+  # Updates fetched by the board itself (see "update" below).
+  - platform: http_request
+    on_begin:
+      - globals.set: {id: g_updating, value: "true"}
+      - component.update: screen
+    on_error:
+      - globals.set: {id: g_updating, value: "false"}
 
 # No Wi-Fi details are built in. Until it has some (or if they stop working) the board
 # runs its own network, named after the device, and a phone that joins it is shown a
@@ -62,7 +80,7 @@ improv_serial:                         # lets the browser flasher set Wi-Fi over
 captive_portal:
 
 http_request:
-  verify_ssl: false                    # the SetReady page is plain http on the LAN
+  verify_ssl: true                     # for the firmware download; the SetReady page is plain http
   timeout: 8s
 
 json:
@@ -95,6 +113,46 @@ text:
     initial_value: "${default_token}"
     on_value:
       - script.execute: fetch
+  # New Wi-Fi details for the "Wi-Fi change" button. Not kept after a restart.
+  - platform: template
+    id: new_wifi_ssid
+    name: "Wi-Fi change 1: new network name"
+    icon: mdi:wifi
+    mode: text
+    optimistic: true
+    max_length: 32
+  - platform: template
+    id: new_wifi_password
+    name: "Wi-Fi change 2: new network password"
+    icon: mdi:wifi-lock
+    mode: password
+    optimistic: true
+    max_length: 64
+
+# Self-update. Every six hours the board reads the published file list for its screen
+# type and compares versions. The settings page shows "Firmware update" with an Install
+# button when there is a newer one; with "Install updates automatically" switched on, the
+# board installs it by itself and restarts.
+update:
+  - platform: http_request
+    id: fw_update
+    name: Firmware update
+    source: ${update_url}/printer-display${file_suffix}.manifest.json
+    update_interval: 6h
+    on_update_available:
+      - if:
+          condition:
+            switch.is_on: auto_update
+          then:
+            - update.perform: fw_update
+
+switch:
+  - platform: template
+    id: auto_update
+    name: Install updates automatically
+    icon: mdi:update
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
 
 # "Apply and restart" on the settings page. Values are saved as they are entered; this
 # restarts the board so it comes up cleanly with them.
@@ -102,6 +160,37 @@ button:
   - platform: restart
     name: Apply and restart
     icon: mdi:restart
+  # Look for newer firmware now instead of waiting for the six-hourly check.
+  - platform: template
+    name: Firmware update check now
+    icon: mdi:cloud-search
+    on_press:
+      - update.check: fw_update
+  # Move the board to another Wi-Fi network from its settings page: fill in the two
+  # "Wi-Fi change" fields, then press this. If the new network can't be joined, the board
+  # stays on the one it has.
+  - platform: template
+    name: "Wi-Fi change 3: connect to new network"
+    icon: mdi:wifi-cog
+    on_press:
+      - if:
+          condition:
+            lambda: return !id(new_wifi_ssid).state.empty();
+          then:
+            - text_sensor.template.publish: {id: wifi_change, state: "Trying the new network..."}
+            - wifi.configure:
+                ssid: !lambda return id(new_wifi_ssid).state;
+                password: !lambda return id(new_wifi_password).state;
+                save: true
+                timeout: 30s
+                on_connect:
+                  - text_sensor.template.publish: {id: wifi_change, state: "Connected to the new network"}
+                  - text.set: {id: new_wifi_password, value: ""}
+                  - script.execute: fetch
+                on_error:
+                  - text_sensor.template.publish: {id: wifi_change, state: "Couldn't join it; still on the old network"}
+          else:
+            - text_sensor.template.publish: {id: wifi_change, state: "Enter the new network's name first"}
 
 # The setup QR code; its content is set from the screen code below.
 qr_code:
@@ -114,20 +203,38 @@ text_sensor:
     ip_address:
       id: ip_addr
       name: IP address
+    ssid:
+      name: Wi-Fi network in use
+  - platform: template
+    id: wifi_change
+    name: "Wi-Fi change: result"
+  # Which firmware this board is running, and for which screen type.
+  - platform: template
+    id: fw_version
+    name: Firmware version
+    icon: mdi:tag
+    update_interval: 1h
+    lambda: return {"${version} (${screen_model})"};
 
 # What the server last told us to show.
 globals:
-  - {id: g_setup,  type: int,         initial_value: "1"}   # 1 = needs Wi-Fi, 2 = needs server/token, 0 = set up
+  - {id: g_setup,  type: int,         initial_value: "3"}   # 3 = starting, 2 = needs server/token, 0 = set up
   - {id: g_base,   type: std::string, initial_value: '""'}  # server address, tidied
   - {id: g_url_get,  type: std::string, initial_value: '""'}
   - {id: g_url_post, type: std::string, initial_value: '""'}
   - {id: g_auth,     type: std::string, initial_value: '""'}   # "Bearer <token>"
   - {id: g_ok,     type: bool,        initial_value: "false"}
-  - {id: g_error,  type: std::string, initial_value: '"Connecting..."'}
+  - {id: g_error,  type: std::string, initial_value: '""'}   # empty until the first reply
   - {id: g_title,  type: std::string, initial_value: '""'}
   - {id: g_state,  type: std::string, initial_value: '""'}
   - {id: g_status, type: std::string, initial_value: '""'}
   - {id: g_sub,    type: std::string, initial_value: '""'}
+  - {id: g_left,   type: std::string, initial_value: '""'}   # e.g. "8h 51m"
+  - {id: g_done,   type: std::string, initial_value: '""'}   # e.g. "18:57"
+  - {id: g_pct,    type: int,         initial_value: "-1"}   # print progress, -1 = unknown
+  - {id: g_touch_x, type: int,        initial_value: "0"}    # last touch, to show where it landed
+  - {id: g_touch_y, type: int,        initial_value: "0"}
+  - {id: g_touch_at, type: uint32_t,  initial_value: "0"}
   - {id: g_head,   type: std::string, initial_value: '""'}
   - {id: g_good,   type: bool,        initial_value: "false"}
   - {id: g_job,    type: std::string, initial_value: '""'}
@@ -137,6 +244,22 @@ globals:
   - {id: g_fil_t,  type: "std::array<std::string, 4>"}
   - {id: g_fil_c,  type: "std::array<uint32_t, 4>"}
   - {id: g_sending, type: bool,       initial_value: "false"}
+  - {id: g_updating, type: bool,      initial_value: "false"}   # an update is being installed
+  # Second page: the jobs waiting for this printer.
+  - {id: g_page,    type: int,        initial_value: "0"}     # 0 = printer, 1 = queue
+  - {id: g_page_at, type: uint32_t,   initial_value: "0"}     # when the queue page was opened
+  - {id: g_q_n,     type: int,        initial_value: "0"}
+  - {id: g_q_more,  type: int,        initial_value: "0"}
+  - {id: g_q_name,  type: "std::array<std::string, 5>"}
+  - {id: g_q_time,  type: "std::array<std::string, 5>"}
+  - {id: g_q_ok,    type: "std::array<bool, 5>"}
+  - {id: g_q_ncol,  type: "std::array<int, 5>"}
+  - {id: g_q_col,   type: "std::array<std::array<uint32_t, 4>, 5>"}
+  # Swipe tracking: where the finger went down and where it was last seen.
+  - {id: g_sw_x0,   type: int,        initial_value: "0"}
+  - {id: g_sw_y0,   type: int,        initial_value: "0"}
+  - {id: g_sw_x,    type: int,        initial_value: "0"}
+  - {id: g_sw_y,    type: int,        initial_value: "0"}
 
 script:
   - id: fetch
@@ -153,7 +276,7 @@ script:
           id(g_url_get) = s + "/api/display";
           id(g_url_post) = s + "/api/display/set-ready";
           id(g_auth) = "Bearer " + id(cfg_token).state;
-          if (!wifi::global_wifi_component->is_connected()) id(g_setup) = 1;
+          if (!wifi::global_wifi_component->is_connected()) id(g_setup) = 3;
           else if (s.empty() || id(cfg_token).state.empty()) id(g_setup) = 2;
           else id(g_setup) = 0;
       - component.update: screen
@@ -166,7 +289,7 @@ script:
                 request_headers:
                   Authorization: !lambda return id(g_auth).c_str();
                 capture_response: true
-                max_response_buffer_size: 4096
+                max_response_buffer_size: 6144
                 on_response:
                   then:
                     - lambda: |-
@@ -187,6 +310,9 @@ script:
                           id(g_state)  = root["state"]  | "";
                           id(g_status) = root["status"] | "";
                           id(g_sub)    = root["sub"]    | "";
+                          id(g_left)   = root["left"]   | "";
+                          id(g_done)   = root["done"]   | "";
+                          id(g_pct)    = root["pct"]    | -1;
                           id(g_head)   = root["head"]   | "";
                           id(g_good)   = root["good"]   | false;
                           id(g_job)    = root["job"]    | "";
@@ -202,6 +328,25 @@ script:
                             n++;
                           }
                           id(g_fil_n) = n;
+                          int q = 0;
+                          JsonArray jobs = root["queue"];
+                          for (JsonObject j : jobs) {
+                            if (q >= 5) break;
+                            id(g_q_name)[q] = j["n"] | "";
+                            id(g_q_time)[q] = j["t"] | "";
+                            id(g_q_ok)[q] = j["ok"] | false;
+                            int k = 0;
+                            JsonArray cols = j["c"];
+                            for (JsonVariant c : cols) {
+                              if (k >= 4) break;
+                              const char *hex = c | "";
+                              id(g_q_col)[q][k++] = strlen(hex) == 6 ? strtoul(hex, nullptr, 16) : 0x808080;
+                            }
+                            id(g_q_ncol)[q] = k;
+                            q++;
+                          }
+                          id(g_q_n) = q;
+                          id(g_q_more) = root["more"] | 0;
                           return true;
                         });
                         id(g_ok) = parsed;
@@ -263,6 +408,7 @@ light:
     restore_mode: ALWAYS_ON
 
 font:
+  - {file: "gfonts://Roboto@500", id: f_huge,  size: 36}
   - {file: "gfonts://Roboto@500", id: f_big,   size: 24}
   - {file: "gfonts://Roboto",     id: f_text,  size: 18}
   - {file: "gfonts://Roboto",     id: f_small, size: 15}
@@ -306,7 +452,37 @@ display:
 
       // First-time setup, shown until the board has Wi-Fi, a server address and a token.
       // Each step has a QR code, so nothing has to be typed to get to the right page.
-      if (id(g_setup) == 1) {
+      // Where we are: decided here, every frame, so the screen follows Wi-Fi straight away.
+      //   3 = starting up (boot screen), 1 = needs Wi-Fi (the board's own network is up),
+      //   2 = needs the server address and token, 0 = set up.
+      int stage = id(g_setup);
+      if (!wifi::global_wifi_component->is_connected())
+        stage = wifi::global_wifi_component->is_ap_active() ? 1 : 3;
+      else if (stage == 0 && !id(g_ok) && id(g_error).empty())
+        stage = 3;                                             // on Wi-Fi, no reply yet
+
+      if (id(g_updating)) {
+        it.print(160, 96, id(f_big), TEXT, TextAlign::CENTER, "Updating firmware");
+        it.print(160, 134, id(f_text), GREEN, TextAlign::CENTER, "Please leave it plugged in");
+        it.print(160, 170, id(f_small), MUTED, TextAlign::CENTER, "It restarts by itself when done");
+        return;
+      }
+
+      // Boot screen: shown while joining Wi-Fi and until the server first answers. The setup
+      // QR codes only appear if the board really does need setting up.
+      if (stage == 3) {
+        bool online = wifi::global_wifi_component->is_connected();
+        it.print(160, 84, id(f_big), TEXT, TextAlign::CENTER, "Watchtower SetReady");
+        it.print(160, 116, id(f_text), MUTED, TextAlign::CENTER, "Printer display");
+        it.print(160, 164, id(f_text), GREEN, TextAlign::CENTER,
+                 online ? "Contacting server..." : "Connecting to Wi-Fi...");
+        it.print(160, 204, id(f_small), MUTED, TextAlign::CENTER,
+                 fit(std::string(App.get_name().c_str()), id(f_small), 300).c_str());
+        it.print(160, 224, id(f_small), MUTED, TextAlign::CENTER, "Version ${version}");
+        return;
+      }
+
+      if (stage == 1) {
         std::string ap = std::string(App.get_name().c_str());
         it.filled_rectangle(0, 0, 320, 38, CARD);
         it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, "Setup 1 of 2: Wi-Fi");
@@ -321,7 +497,7 @@ display:
         it.print(12, 214, id(f_small), GREEN, fit(ap, id(f_small), 296).c_str());
         return;
       }
-      if (id(g_setup) == 2) {
+      if (stage == 2) {
         std::string url = "http://" + id(ip_addr).state;
         it.filled_rectangle(0, 0, 320, 38, CARD);
         it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, "Setup 2 of 2: Server");
@@ -350,20 +526,79 @@ display:
         return;
       }
 
+      // Two small dots in the top bar show which of the two pages is on screen.
+      auto pager = [&](int page) {
+        it.filled_circle(262, 19, 3, page == 0 ? TEXT : MUTED);
+        it.filled_circle(274, 19, 3, page == 1 ? TEXT : MUTED);
+      };
+
+      // Page 2 (swipe, or tap the top bar): the jobs waiting for this printer, in
+      // Watchtower's order. It goes back to the printer page by itself after 30 seconds.
+      if (id(g_page) == 1 && millis() - id(g_page_at) > 30000) id(g_page) = 0;
+      if (id(g_page) == 1) {
+        it.filled_rectangle(0, 0, 320, 38, CARD);
+        it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, fit(id(g_title) + " queue", id(f_big), 236).c_str());
+        pager(1);
+        if (id(g_q_n) == 0) {
+          it.print(160, 120, id(f_text), MUTED, TextAlign::CENTER, "No jobs waiting");
+          it.print(160, 146, id(f_small), MUTED, TextAlign::CENTER, "for this printer");
+        }
+        for (int i = 0; i < id(g_q_n); i++) {
+          int y = 44 + i * 44;
+          Color edge = id(g_q_ok)[i] ? GREEN : RED;          // has the filament / needs loading
+          it.filled_rectangle(4, y + 2, 4, 38, edge);
+          int tw = 0, x1, y1, th;
+          if (!id(g_q_time)[i].empty()) {
+            it.get_text_bounds(0, 0, id(g_q_time)[i].c_str(), id(f_small), TextAlign::TOP_LEFT, &x1, &y1, &tw, &th);
+            it.print(312, y + 2, id(f_small), MUTED, TextAlign::TOP_RIGHT, id(g_q_time)[i].c_str());
+          }
+          it.print(16, y, id(f_text), TEXT, fit(id(g_q_name)[i], id(f_text), 290 - tw).c_str());
+          for (int k = 0; k < id(g_q_ncol)[i]; k++) {
+            uint32_t c = id(g_q_col)[i][k];
+            it.filled_circle(23 + k * 18, y + 32, 6, Color((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF));
+            it.circle(23 + k * 18, y + 32, 6, MUTED);
+          }
+          it.print(100, y + 23, id(f_small), edge, id(g_q_ok)[i] ? "ready to run" : "needs filament");
+        }
+        if (id(g_q_more) > 0)
+          it.print(160, 44 + id(g_q_n) * 44 + 1, id(f_small), MUTED, TextAlign::TOP_CENTER,
+                   ("+" + std::to_string(id(g_q_more)) + " more").c_str());
+        if (id(g_touch_at) != 0 && millis() - id(g_touch_at) < 1500)
+          it.circle(id(g_touch_x), id(g_touch_y), 10, Color(255, 255, 255));
+        return;
+      }
+
       // Header: printer name, with a dot in the state colour.
       const std::string &st = id(g_state);
       Color dot = st == "ready" ? GREEN : st == "offline" ? AMBER : st == "unknown" ? MUTED : RED;
       it.filled_rectangle(0, 0, 320, 38, CARD);
-      it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, fit(id(g_title), id(f_big), 260).c_str());
+      it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, fit(id(g_title), id(f_big), 236).c_str());
       it.filled_circle(298, 19, 9, dot);
+      pager(0);
 
-      it.print(12, 46, id(f_text), TEXT, fit(id(g_status), id(f_text), 296).c_str());
-      if (!id(g_sub).empty())
-        it.print(12, 70, id(f_small), MUTED, fit(id(g_sub), id(f_small), 296).c_str());
+      bool printing = st == "printing";
+      bool advice = !id(g_head).empty();
+      int y = 96;
+
+      if (printing && !advice && !id(g_left).empty()) {
+        // Printing with nothing to load: use the space for the two things worth reading
+        // from across the room.
+        it.print(12, 46, id(f_small), MUTED, "Estimated time left");
+        it.print(12, 62, id(f_huge), TEXT, id(g_left).c_str());
+        it.print(12, 112, id(f_small), MUTED, "Estimated completion");
+        it.print(12, 128, id(f_huge), TEXT, id(g_done).c_str());
+      } else if (printing) {
+        // Printing, with filament to load for a waiting job: times on one line, then advice.
+        it.print(12, 46, id(f_text), TEXT, fit(id(g_sub).empty() ? id(g_status) : id(g_sub), id(f_text), 296).c_str());
+        y = 74;
+      } else {
+        it.print(12, 46, id(f_text), TEXT, fit(id(g_status), id(f_text), 296).c_str());
+        if (!id(g_sub).empty())
+          it.print(12, 70, id(f_small), MUTED, fit(id(g_sub), id(f_small), 296).c_str());
+      }
 
       // Advice: a heading, the job, then the filament to load or a warning.
-      int y = 96;
-      if (!id(g_head).empty()) {
+      if (advice) {
         it.print(12, y, id(f_text), id(g_good) ? GREEN : RED, fit(id(g_head), id(f_text), 296).c_str());
         y += 24;
       }
@@ -372,8 +607,8 @@ display:
         y += 22;
       }
       bool button = !id(g_button).empty();
-      int bottom = button ? 182 : 236;
-      for (int i = 0; i < id(g_fil_n) && y + 20 <= bottom; i++) {
+      int bottom = (button || printing) ? 182 : 236;
+      for (int i = 0; advice && i < id(g_fil_n) && y + 20 <= bottom; i++) {
         uint32_t c = id(g_fil_c)[i];
         it.filled_circle(22, y + 10, 9, Color((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF));
         it.circle(22, y + 10, 9, MUTED);
@@ -383,13 +618,26 @@ display:
       if (!id(g_warn).empty() && y + 18 <= bottom)
         it.print(12, y, id(f_small), AMBER, fit(id(g_warn), id(f_small), 296).c_str());
 
-      // Set Ready: hold the button for a second.
+      // Bottom bar. Plate waiting: the Set Ready button (hold for a second).
+      // Printing: the same bar as a progress bar, filled in green as the print goes on.
       if (button) {
         bool held = id(btn_touch).state;
         it.filled_rectangle(10, 186, 300, 48, id(g_sending) ? MUTED : held ? GREEN : GO);
         it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER,
                  id(g_sending) ? "Sending..." : held ? "Keep holding..." : "Hold: Set Ready");
+      } else if (printing) {
+        int pct = id(g_pct) < 0 ? 0 : id(g_pct) > 100 ? 100 : id(g_pct);
+        it.filled_rectangle(10, 186, 300, 48, CARD);
+        if (pct > 0) it.filled_rectangle(10, 186, 300 * pct / 100, 48, GO);
+        it.rectangle(10, 186, 300, 48, GO);
+        std::string label = id(g_pct) < 0 ? std::string("PRINTING") : "PRINTING " + std::to_string(pct) + "%";
+        it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER, label.c_str());
       }
+
+      // A ring where the screen was last touched, for a moment, so a touch that lands in
+      // the wrong place is obvious.
+      if (id(g_touch_at) != 0 && millis() - id(g_touch_at) < 1500)
+        it.circle(id(g_touch_x), id(g_touch_y), 10, Color(255, 255, 255));
 
 touchscreen:
   - platform: xpt2046
@@ -407,8 +655,30 @@ touchscreen:
       y_max: 3860
     transform:
       swap_xy: true
-      mirror_x: false
-      mirror_y: false
+      mirror_x: ${touch_mirror_x}
+      mirror_y: ${touch_mirror_y}
+    on_touch:
+      - lambda: |-
+          id(g_touch_x) = touch.x;
+          id(g_touch_y) = touch.y;
+          id(g_touch_at) = millis();
+          ESP_LOGI("touch", "x=%d y=%d (raw %d, %d)", touch.x, touch.y, touch.x_raw, touch.y_raw);
+          id(g_sw_x0) = id(g_sw_x) = touch.x;
+          id(g_sw_y0) = id(g_sw_y) = touch.y;
+    on_update:
+      - lambda: |-
+          for (auto &t : touches) { id(g_sw_x) = t.x; id(g_sw_y) = t.y; }
+    # Finger lifted: a sideways swipe, or a tap on the top bar, switches page.
+    on_release:
+      - lambda: |-
+          int dx = id(g_sw_x) - id(g_sw_x0), dy = id(g_sw_y) - id(g_sw_y0);
+          bool swipe = abs(dx) > 60 && abs(dy) < 60;
+          bool tap_bar = abs(dx) < 20 && abs(dy) < 20 && id(g_sw_y0) < 40;
+          if (id(g_setup) == 0 && id(g_ok) && (swipe || tap_bar)) {
+            id(g_page) = id(g_page) == 0 ? 1 : 0;
+            id(g_page_at) = millis();
+          }
+      - component.update: screen
 
 binary_sensor:
   # Finger on the button area: used to draw the "keep holding" state.
