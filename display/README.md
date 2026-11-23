@@ -3,7 +3,7 @@
 A small touch screen for the front of one printer. It shows the printer's state, what
 filament to load for the next waiting job, and a **Set Ready** button.
 
-![Four example screens: printing with time left and a progress bar, printing with filament to load, load a filament before Set Ready, and Set Ready picks up a job](../docs/display-preview.png)
+![Four example screens: printing with time left and a progress bar, load a filament before Set Ready, Set Ready picks up a job, and the queue page](../docs/display-preview.png)
 
 *Mock-up of the layout with sample data.*
 
@@ -102,6 +102,14 @@ only making one.
   - An amber "Low:" line when the spool has less than the job needs.
 - **Hold: Set Ready:** appears when the plate is waiting to be cleared. Hold it for a
   second; it turns brighter while held, then sends. A brush against the screen does nothing.
+
+### The queue page
+
+Swipe left or right across the screen, or tap the top bar, to see the jobs waiting for
+this printer: up to four, in Watchtower's order. Each shows its name, print time, the
+colours it needs, and a green "ready to run" or red "needs filament" depending on what
+this printer has loaded. Swipe or tap again to go back; it returns by itself after 30
+seconds. Two small dots in the top bar show which page you are on.
 
 It asks the server every 10 seconds.
 

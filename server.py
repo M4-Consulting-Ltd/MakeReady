@@ -997,7 +997,8 @@ def display_summary(name):
     """Everything a printer's display shows, already worded and trimmed for a small screen."""
     out = {"title": name, "state": "unknown", "status": "", "sub": "", "head": "", "good": False,
            "job": "", "fil": [], "warn": "", "button": "",
-           "pct": -1, "left": "", "done": ""}             # progress bar and big times
+           "pct": -1, "left": "", "done": "",             # progress bar and big times
+           "queue": [], "more": 0}                        # second page: waiting jobs
     printers, err = printers_cached()
     p = next((x for x in printers if x.get("name") == name), None)
     if p is None:
@@ -1020,11 +1021,21 @@ def display_summary(name):
         out["button"] = "SET READY"
 
     q = queue_data()
+    # The jobs this printer could take, in Watchtower's order: the display's second page.
+    mine = sorted((j for j in q.get("jobs") or []
+                   if name in (j.get("missing_by") or {})
+                   and (not j.get("printer") or j["printer"] == name)),
+                  key=lambda j: (j.get("order") or 0, j.get("created") or ""))
+    for j in mine[:4]:
+        mins = j.get("minutes")
+        out["queue"].append({
+            "n": j["name"],
+            "t": ("%dh %dm" % divmod(mins, 60)) if isinstance(mins, int) and mins >= 60
+                 else ("%dm" % mins if isinstance(mins, int) else ""),
+            "ok": not j["missing_by"][name],                 # this printer has every filament
+            "c": [(f.get("color") or "").lstrip("#") for f in j["filaments"]][:4]})
+    out["more"] = max(0, len(mine) - 4)
     if state in ("plate", "ready"):
-        mine = sorted((j for j in q.get("jobs") or []
-                       if name in (j.get("missing_by") or {})
-                       and (not j.get("printer") or j["printer"] == name)),
-                      key=lambda j: (j.get("order") or 0, j.get("created") or ""))   # Watchtower's order
         runnable = [j for j in mine if not j["missing_by"][name]]
         if runnable:
             j = runnable[0]
@@ -1050,6 +1061,8 @@ def display_summary(name):
         out[key] = plain(out[key])
     for f in out["fil"]:
         f["t"] = plain(f["t"])
+    for row in out["queue"]:
+        row["n"] = plain(row["n"])
     return out
 
 
