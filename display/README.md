@@ -137,9 +137,17 @@ only making one.
 ### The queue page
 
 Swipe left or right across the screen, or tap the top bar, to see the jobs waiting for
-this printer, in Watchtower's order (up to eight; jobs for other printer models are left
-out). Each shows its name, print time, the colours it needs, and a green "ready to run"
-or red "needs filament" depending on what this printer has loaded. They are listed four
+this printer's model, in Watchtower's order (up to eight). Each shows its name, print
+time, the colours it needs, and a green "ready to run" or red "needs filament" depending
+on what this printer has loaded. A label on the right says where the job stands:
+
+- **Queued:** not assigned to a printer yet.
+- **Assigned here** / **Soft: here:** assigned to this printer ("soft" is Watchtower's
+  own pick, which it may still change).
+- **Soft: P1S-3:** soft-assigned to another printer. It is listed because Watchtower may
+  move it here once the right filament is loaded.
+
+Jobs fixed to another printer, and jobs for other printer models, are left out. They are listed four
 at a time: tap the bottom line, or swipe up or down, for the rest.
 
 **Tap a job** to see the filaments it needs: colour, name, weight and material for each,
