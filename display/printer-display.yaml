@@ -270,6 +270,7 @@ globals:
   - {id: g_left,   type: std::string, initial_value: '""'}   # e.g. "8h 51m"
   - {id: g_done,   type: std::string, initial_value: '""'}   # e.g. "18:57"
   - {id: g_pct,    type: int,         initial_value: "-1"}   # print progress, -1 = unknown
+  - {id: g_bar,    type: std::string, initial_value: '""'}   # bar wording when not printing, e.g. "RECEIVING 92%"
   - {id: g_touch_x, type: int,        initial_value: "0"}    # last touch, to show where it landed
   - {id: g_touch_y, type: int,        initial_value: "0"}
   - {id: g_touch_at, type: uint32_t,  initial_value: "0"}
@@ -364,6 +365,7 @@ script:
                           id(g_left)   = root["left"]   | "";
                           id(g_done)   = root["done"]   | "";
                           id(g_pct)    = root["pct"]    | -1;
+                          id(g_bar)    = root["bar"]    | "";
                           id(g_head)   = root["head"]   | "";
                           id(g_good)   = root["good"]   | false;
                           id(g_job)    = root["job"]    | "";
@@ -634,6 +636,7 @@ display:
       pager(0);
 
       bool printing = st == "printing";
+      bool bar = !id(g_bar).empty();        // a job is being sent to the printer
       bool advice = !id(g_head).empty();
       int y = 96;
 
@@ -664,7 +667,7 @@ display:
         y += 22;
       }
       bool button = !id(g_button).empty();
-      int bottom = (button || printing) ? 182 : 236;
+      int bottom = (button || printing || bar) ? 182 : 236;
       for (int i = 0; advice && i < id(g_fil_n) && y + 20 <= bottom; i++) {
         uint32_t c = id(g_fil_c)[i];
         it.filled_circle(22, y + 10, 9, Color((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF));
@@ -682,12 +685,13 @@ display:
         it.filled_rectangle(10, 186, 300, 48, id(g_sending) ? MUTED : held ? GREEN : GO);
         it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER,
                  id(g_sending) ? "Sending..." : held ? "Keep holding..." : "Hold: Set Ready");
-      } else if (printing) {
+      } else if (printing || bar) {
         int pct = id(g_pct) < 0 ? 0 : id(g_pct) > 100 ? 100 : id(g_pct);
         it.filled_rectangle(10, 186, 300, 48, CARD);
         if (pct > 0) it.filled_rectangle(10, 186, 300 * pct / 100, 48, GO);
         it.rectangle(10, 186, 300, 48, GO);
-        std::string label = id(g_pct) < 0 ? std::string("PRINTING") : "PRINTING " + std::to_string(pct) + "%";
+        std::string label = bar ? id(g_bar)
+                          : id(g_pct) < 0 ? std::string("PRINTING") : "PRINTING " + std::to_string(pct) + "%";
         it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER, label.c_str());
       }
 
