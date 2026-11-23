@@ -1,0 +1,300 @@
+# Watchtower SetReady printer display
+#
+# A small touch screen for the front of one printer. It shows the printer's state, what
+# filament to load for the next waiting job, and a Set Ready button (hold to press).
+#
+# Board: ESP32-2432S028 / ESP32-2432S028R ("Cheap Yellow Display"), 2.8" 320x240,
+#        the single micro-USB version with an ILI9341 screen.
+#
+# Fill in the five values below, then flash with ESPHome:
+#     esphome run printer-display.yaml
+# See README.md in this folder for the full steps.
+
+substitutions:
+  device_name: printer-display        # unique per screen: letters, digits and hyphens
+  wifi_ssid: "YOUR WIFI NAME"          # 2.4 GHz network
+  wifi_password: "YOUR WIFI PASSWORD"
+  server: "http://192.168.1.10:8080"  # address of the SetReady page, no trailing slash
+  token: "PASTE THE DISPLAY TOKEN"    # Settings -> Printer displays -> Create token
+  refresh: 10s                         # how often to ask the server
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${device_name}
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: ${wifi_ssid}
+  password: ${wifi_password}
+  ap:                                  # fallback network if Wi-Fi can't be joined
+    ssid: ${device_name}
+
+captive_portal:
+
+http_request:
+  verify_ssl: false                    # the SetReady page is plain http on the LAN
+  timeout: 8s
+
+json:
+
+# What the server last told us to show.
+globals:
+  - {id: g_ok,     type: bool,        initial_value: "false"}
+  - {id: g_error,  type: std::string, initial_value: '"Connecting..."'}
+  - {id: g_title,  type: std::string, initial_value: '""'}
+  - {id: g_state,  type: std::string, initial_value: '""'}
+  - {id: g_status, type: std::string, initial_value: '""'}
+  - {id: g_sub,    type: std::string, initial_value: '""'}
+  - {id: g_head,   type: std::string, initial_value: '""'}
+  - {id: g_good,   type: bool,        initial_value: "false"}
+  - {id: g_job,    type: std::string, initial_value: '""'}
+  - {id: g_warn,   type: std::string, initial_value: '""'}
+  - {id: g_button, type: std::string, initial_value: '""'}
+  - {id: g_fil_n,  type: int,         initial_value: "0"}
+  - {id: g_fil_t,  type: "std::array<std::string, 4>"}
+  - {id: g_fil_c,  type: "std::array<uint32_t, 4>"}
+  - {id: g_sending, type: bool,       initial_value: "false"}
+
+script:
+  - id: fetch
+    mode: single
+    then:
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - http_request.get:
+                url: ${server}/api/display
+                request_headers:
+                  Authorization: Bearer ${token}
+                capture_response: true
+                max_response_buffer_size: 4096
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code != 200) {
+                          id(g_ok) = false;
+                          id(g_error) = response->status_code == 401
+                            ? std::string("Token not accepted") : std::string("Server error ") + std::to_string(response->status_code);
+                          return;
+                        }
+                        bool parsed = json::parse_json(body, [](JsonObject root) -> bool {
+                          id(g_title)  = root["title"]  | "";
+                          id(g_state)  = root["state"]  | "";
+                          id(g_status) = root["status"] | "";
+                          id(g_sub)    = root["sub"]    | "";
+                          id(g_head)   = root["head"]   | "";
+                          id(g_good)   = root["good"]   | false;
+                          id(g_job)    = root["job"]    | "";
+                          id(g_warn)   = root["warn"]   | "";
+                          id(g_button) = root["button"] | "";
+                          int n = 0;
+                          for (JsonObject f : root["fil"].as<JsonArray>()) {
+                            if (n >= 4) break;
+                            id(g_fil_t)[n] = f["t"] | "";
+                            const char *hex = f["c"] | "";
+                            id(g_fil_c)[n] = strlen(hex) == 6 ? strtoul(hex, nullptr, 16) : 0x808080;
+                            n++;
+                          }
+                          id(g_fil_n) = n;
+                          return true;
+                        });
+                        id(g_ok) = parsed;
+                        if (!parsed) id(g_error) = "Bad reply from server";
+                    - component.update: screen
+                on_error:
+                  then:
+                    - lambda: |-
+                        id(g_ok) = false;
+                        id(g_error) = "Can't reach server";
+                    - component.update: screen
+          else:
+            - lambda: |-
+                id(g_ok) = false;
+                id(g_error) = "No Wi-Fi";
+            - component.update: screen
+
+  - id: set_ready
+    mode: single
+    then:
+      - globals.set: {id: g_sending, value: "true"}
+      - component.update: screen
+      - http_request.post:
+          url: ${server}/api/display/set-ready
+          request_headers:
+            Authorization: Bearer ${token}
+            Content-Type: application/json
+          body: "{}"
+      - delay: 1500ms                  # give Watchtower a beat
+      - globals.set: {id: g_sending, value: "false"}
+      - script.execute: fetch
+
+interval:
+  - interval: ${refresh}
+    then:
+      - script.execute: fetch
+
+# ---- Screen (pins are fixed on this board) ----
+spi:
+  - id: tft_spi
+    clk_pin: GPIO14
+    mosi_pin: GPIO13
+    miso_pin: GPIO12
+  - id: touch_spi
+    clk_pin: GPIO25
+    mosi_pin: GPIO32
+    miso_pin: GPIO39
+
+output:
+  - platform: ledc
+    pin: GPIO21
+    id: backlight_pwm
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    id: backlight
+    name: Backlight
+    restore_mode: ALWAYS_ON
+
+font:
+  - {file: "gfonts://Roboto@500", id: f_big,   size: 24}
+  - {file: "gfonts://Roboto",     id: f_text,  size: 18}
+  - {file: "gfonts://Roboto",     id: f_small, size: 15}
+
+display:
+  - platform: ili9xxx
+    id: screen
+    model: ILI9341
+    spi_id: tft_spi
+    cs_pin: GPIO15
+    dc_pin: GPIO2
+    invert_colors: false
+    color_palette: 8BIT                # 16-bit needs more memory than this board has free
+    update_interval: 250ms             # quick enough to show the button being held
+    dimensions:
+      width: 320
+      height: 240
+    transform:                         # landscape, USB port on the right
+      swap_xy: true
+      mirror_x: false
+      mirror_y: false
+    lambda: |-
+      const Color BG(17, 19, 23), CARD(27, 30, 36), TEXT(236, 238, 242), MUTED(154, 163, 178);
+      const Color GREEN(53, 183, 101), RED(239, 83, 80), AMBER(240, 162, 46), GO(28, 143, 69);
+      it.fill(BG);
+
+      // Shorten text with "..." until it fits a width.
+      auto fit = [&](std::string s, display::BaseFont *f, int maxw) -> std::string {
+        int x1, y1, w, h;
+        it.get_text_bounds(0, 0, s.c_str(), f, TextAlign::TOP_LEFT, &x1, &y1, &w, &h);
+        if (w <= maxw) return s;
+        while (s.size() > 1) {
+          s.pop_back();
+          std::string t = s + "...";
+          it.get_text_bounds(0, 0, t.c_str(), f, TextAlign::TOP_LEFT, &x1, &y1, &w, &h);
+          if (w <= maxw) return t;
+        }
+        return s;
+      };
+
+      if (!id(g_ok)) {
+        it.print(160, 100, id(f_big), TEXT, TextAlign::CENTER, "Watchtower SetReady");
+        it.print(160, 140, id(f_text), AMBER, TextAlign::CENTER, id(g_error).c_str());
+        return;
+      }
+
+      // Header: printer name, with a dot in the state colour.
+      const std::string &st = id(g_state);
+      Color dot = st == "ready" ? GREEN : st == "offline" ? AMBER : st == "unknown" ? MUTED : RED;
+      it.filled_rectangle(0, 0, 320, 38, CARD);
+      it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, fit(id(g_title), id(f_big), 260).c_str());
+      it.filled_circle(298, 19, 9, dot);
+
+      it.print(12, 46, id(f_text), TEXT, fit(id(g_status), id(f_text), 296).c_str());
+      if (!id(g_sub).empty())
+        it.print(12, 70, id(f_small), MUTED, fit(id(g_sub), id(f_small), 296).c_str());
+
+      // Advice: a heading, the job, then the filament to load or a warning.
+      int y = 96;
+      if (!id(g_head).empty()) {
+        it.print(12, y, id(f_text), id(g_good) ? GREEN : RED, fit(id(g_head), id(f_text), 296).c_str());
+        y += 24;
+      }
+      if (!id(g_job).empty()) {
+        it.print(12, y, id(f_small), TEXT, fit(id(g_job), id(f_small), 296).c_str());
+        y += 22;
+      }
+      bool button = !id(g_button).empty();
+      int bottom = button ? 182 : 236;
+      for (int i = 0; i < id(g_fil_n) && y + 20 <= bottom; i++) {
+        uint32_t c = id(g_fil_c)[i];
+        it.filled_circle(22, y + 10, 9, Color((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF));
+        it.circle(22, y + 10, 9, MUTED);
+        it.print(40, y, id(f_text), TEXT, fit(id(g_fil_t)[i], id(f_text), 268).c_str());
+        y += 24;
+      }
+      if (!id(g_warn).empty() && y + 18 <= bottom)
+        it.print(12, y, id(f_small), AMBER, fit(id(g_warn), id(f_small), 296).c_str());
+
+      // Set Ready: hold the button for a second.
+      if (button) {
+        bool held = id(btn_touch).state;
+        it.filled_rectangle(10, 186, 300, 48, id(g_sending) ? MUTED : held ? GREEN : GO);
+        it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER,
+                 id(g_sending) ? "Sending..." : held ? "Keep holding..." : "Hold: Set Ready");
+      }
+
+touchscreen:
+  - platform: xpt2046
+    id: touch
+    spi_id: touch_spi
+    cs_pin: GPIO33
+    interrupt_pin: GPIO36
+    update_interval: 50ms
+    threshold: 400
+    # If touches land in the wrong place, adjust these (see README.md).
+    calibration:
+      x_min: 280
+      x_max: 3860
+      y_min: 340
+      y_max: 3860
+    transform:
+      swap_xy: true
+      mirror_x: false
+      mirror_y: false
+
+binary_sensor:
+  # Finger on the button area: used to draw the "keep holding" state.
+  - platform: touchscreen
+    id: btn_touch
+    touchscreen_id: touch
+    x_min: 10
+    x_max: 310
+    y_min: 186
+    y_max: 234
+  # The same area, but only "on" after a one-second hold: this sends Set Ready.
+  - platform: touchscreen
+    id: btn_held
+    touchscreen_id: touch
+    x_min: 10
+    x_max: 310
+    y_min: 186
+    y_max: 234
+    filters:
+      - delayed_on: 1s
+    on_press:
+      - if:
+          condition:
+            lambda: return !id(g_button).empty() && !id(g_sending);
+          then:
+            - script.execute: set_ready

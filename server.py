@@ -77,7 +77,7 @@ CFG = load_config()
 LOCK = threading.Lock()
 SAVED_KEYS = ("WATCHTOWER_URL", "WATCHTOWER_API_KEY", "WATCHTOWER_CA", "WATCHTOWER_INSECURE",
               "WATCHTOWER_USERNAME", "WATCHTOWER_PASSWORD", "PAGE_PASSWORD_HASH",
-              "SESSION_SECRET")
+              "SESSION_SECRET", "DISPLAY_TOKENS")
 
 
 def truthy(v):
@@ -164,18 +164,23 @@ def update_config(new):
         elif page_password:
             CFG["PAGE_PASSWORD_HASH"] = hash_password(page_password)
             CFG["SESSION_SECRET"] = secrets.token_hex(32)   # logs out every other browser
-        saved = {}
-        if os.path.exists(CONFIG_PATH):
-            with open(CONFIG_PATH, encoding="utf-8") as f:
-                saved = json.load(f)
-        saved.update({k: CFG[k] for k in SAVED_KEYS if k in CFG})
-        tmp = CONFIG_PATH + ".tmp"
-        with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w",
-                  encoding="utf-8") as f:
-            json.dump(saved, f, indent=2)
-        os.replace(tmp, CONFIG_PATH)
+        save_config()
     cam_reset()
     return None
+
+
+def save_config():
+    """Write the saved settings to config.json. Call with LOCK held."""
+    saved = {}
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, encoding="utf-8") as f:
+            saved = json.load(f)
+    saved.update({k: CFG[k] for k in SAVED_KEYS if k in CFG})
+    tmp = CONFIG_PATH + ".tmp"
+    with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w",
+              encoding="utf-8") as f:
+        json.dump(saved, f, indent=2)
+    os.replace(tmp, CONFIG_PATH)
 
 
 # ---- Page login ------------------------------------------------------------------------
@@ -767,6 +772,166 @@ def upstream(method, path, body=None):
                                          % (BASE, reason, hint)}).encode(), None
 
 
+# ---- Printer displays -------------------------------------------------------------------
+# A small screen on the front of a printer (an ESP32 with a display, see display/) asks
+# for a ready-to-draw summary of its own printer and can press Set Ready. Each display has
+# its own token, valid for one printer only, so it needs no page login and can't touch
+# anything else. Only a hash of the token is stored.
+PRINTERS_TTL = 5
+PRINTERS = {"at": 0, "list": None, "error": ""}
+STATUS_TEXT = {"ready": "Ready for the next job", "plate": "Plate needs clearing",
+               "printing": "Printing", "paused": "Paused or error", "offline": "Offline"}
+
+
+def _token_hash(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def display_tokens():
+    tokens = CFG.get("DISPLAY_TOKENS")
+    return tokens if isinstance(tokens, dict) else {}
+
+
+def display_list():
+    return [{"id": h[:8], "printer": name} for h, name in sorted(display_tokens().items(),
+                                                              key=lambda x: x[1])]
+
+
+def display_create(printer):
+    token = secrets.token_urlsafe(24)
+    with LOCK:
+        tokens = dict(display_tokens())
+        tokens[_token_hash(token)] = printer
+        CFG["DISPLAY_TOKENS"] = tokens
+        save_config()
+    return token
+
+
+def display_revoke(ident):
+    with LOCK:
+        tokens = {h: n for h, n in display_tokens().items() if h[:8] != ident}
+        CFG["DISPLAY_TOKENS"] = tokens
+        save_config()
+
+
+def display_printer(headers):
+    """The printer a request's token is for, or None."""
+    auth = str(headers.get("Authorization") or "")
+    token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    if not token:
+        return None
+    want = _token_hash(token)
+    for h, name in display_tokens().items():
+        if hmac.compare_digest(h, want):
+            return name
+    return None
+
+
+def printers_cached():
+    """(list of printers from the public API, error). Shared by every display for 5 s."""
+    now = time.time()
+    with LOCK:
+        if PRINTERS["list"] is not None and now - PRINTERS["at"] < PRINTERS_TTL:
+            return PRINTERS["list"], PRINTERS["error"]
+    status, body, _ = upstream("GET", "/printers")
+    found, err = [], ""
+    try:
+        data = json.loads(body)
+        if status != 200:
+            err = str(data.get("error") or "Watchtower returned HTTP %d" % status)[:120]
+        else:
+            data = data.get("data", data) if isinstance(data, dict) else data
+            data = data.get("printers") if isinstance(data, dict) else data
+            found = [p for p in data or [] if isinstance(p, dict) and p.get("name")]
+    except (ValueError, AttributeError):
+        err = "Watchtower returned HTTP %d" % status
+    with LOCK:
+        PRINTERS.update(at=time.time(), list=found, error=err)
+    return found, err
+
+
+def printer_state(p):
+    """Same rules as the page (and ClearCue)."""
+    if not p.get("online"):
+        return "offline"
+    if p.get("busy"):
+        words = " ".join(str(p.get(k) or "") for k in ("status", "state", "print_state",
+                                                       "printStatus", "job_status",
+                                                       "gcode_state")).upper()
+        return "paused" if any(w in words for w in ("PAUSE", "ERROR", "FAULT", "HALT")) \
+            else "printing"
+    return "ready" if p.get("ready") else "plate"
+
+
+def _fil_text(f):
+    text = " ".join(x for x in (f.get("name"), f.get("type"), f.get("variant")) if x) or "Filament"
+    grams = f.get("grams")
+    if isinstance(grams, (int, float)):
+        text += " %sg" % ("<1" if 0 < grams < 1 else round(grams))
+    return text
+
+
+def display_summary(name):
+    """Everything a printer's display shows, already worded and trimmed for a small screen."""
+    out = {"title": name, "state": "unknown", "status": "", "sub": "", "head": "", "good": False,
+           "job": "", "fil": [], "warn": "", "button": ""}
+    printers, err = printers_cached()
+    p = next((x for x in printers if x.get("name") == name), None)
+    if p is None:
+        out["status"] = err or "Not found in Watchtower"
+        return out
+    state = printer_state(p)
+    out["state"], out["status"] = state, STATUS_TEXT[state]
+    if state == "printing" and isinstance(p.get("progress"), (int, float)):
+        pct = p["progress"] * 100 if p["progress"] <= 1 else p["progress"]
+        out["status"] += " %d%%" % round(pct)
+    mins = p.get("eta_minutes")
+    if state in ("printing", "paused") and isinstance(mins, (int, float)) and mins >= 0:
+        mins = round(mins)
+        out["sub"] = ("%dh %dm left" % divmod(mins, 60)) if mins >= 60 else "%dm left" % mins
+        if state == "printing":
+            out["sub"] += time.strftime(", done %H:%M", time.localtime(time.time() + mins * 60))
+    if state == "plate":
+        out["button"] = "SET READY"
+
+    q = queue_data()
+    if state in ("plate", "ready"):
+        mine = sorted((j for j in q.get("jobs") or []
+                       if name in (j.get("missing_by") or {})
+                       and (not j.get("printer") or j["printer"] == name)),
+                      key=lambda j: (j.get("created") or "", j.get("order") or 0))
+        runnable = [j for j in mine if not j["missing_by"][name]]
+        if runnable:
+            j = runnable[0]
+            out.update(good=True, job=j["name"],
+                       head="Set Ready picks up:" if state == "plate" else "Next job:")
+            short = (j.get("short_by") or {}).get(name) or []
+            if short:
+                f = j["filaments"][short[0]["i"]]
+                out["warn"] = "Low: %s, %dg left" % (_fil_text(f), short[0]["have"])
+        elif mine:
+            j = min(mine, key=lambda x: len(x["missing_by"][name]))    # closest, oldest on a tie
+            out.update(head="Load for next job:", job=j["name"],
+                       fil=[{"t": _fil_text(j["filaments"][i]),
+                             "c": (j["filaments"][i].get("color") or "").lstrip("#")}
+                            for i in j["missing_by"][name]][:4])
+    else:
+        want = (q.get("needs") or {}).get(name) or []
+        if want:
+            out.update(head="Load for waiting jobs:",
+                       fil=[{"t": _fil_text(f), "c": (f.get("color") or "").lstrip("#")}
+                            for f in want][:4])
+    # The display's font only has plain ASCII: swap the common extras, drop the rest.
+    def plain(text):
+        text = str(text).replace("\u2014", "-").replace("\u2013", "-").replace("\u2026", "...")
+        return text.encode("ascii", "replace").decode()
+    for key in ("title", "status", "sub", "head", "job", "warn"):
+        out[key] = plain(out[key])
+    for f in out["fil"]:
+        f["t"] = plain(f["t"])
+    return out
+
+
 # The only printer commands the page can send: URL suffix -> Watchtower command.
 # "stop" cancels the job; Watchtower wants confirm:true with it. The page asks first.
 COMMANDS = {"set-ready": {"command": "set_ready"},
@@ -806,8 +971,17 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/session":
             self.send(200, json.dumps({"required": auth_required(),
                                        "authed": self.authed()}).encode())
+        elif path == "/api/display":
+            # A printer display, identified by its own token instead of a page login.
+            name = display_printer(self.headers)
+            if name is None:
+                self.send(401, b'{"error":"Unknown display token"}')
+            else:
+                self.send(200, json.dumps(display_summary(name)).encode())
         elif not self.authed():
             self.send(401, b'{"error":"Log in to use this page.","login":true}')
+        elif path == "/api/displays":
+            self.send(200, json.dumps({"displays": display_list()}).encode())
         elif path == "/api/config":
             self.send(200, json.dumps(public_config()).encode())
         elif path == "/api/queue":
@@ -862,8 +1036,34 @@ class Handler(BaseHTTPRequestHandler):
         if parts == ["", "api", "logout"]:
             self.send(200, b'{"ok":true}', cookie=session_cookie(clear=True))
             return
+        if parts == ["", "api", "display", "set-ready"]:
+            # From a printer display: only Set Ready, only for the token's own printer.
+            name = display_printer(self.headers)
+            if name is None:
+                self.send(401, b'{"error":"Unknown display token"}')
+                return
+            status, body, ra = upstream("POST", "/printers/%s/commands"
+                                        % urllib.parse.quote(name, safe=""), COMMANDS["set-ready"])
+            with LOCK:
+                PRINTERS["at"] = 0                           # show the new state straight away
+            self.send(status, body or b"{}", retry_after=ra)
+            return
         if not self.authed():
             self.send(401, b'{"error":"Log in to use this page.","login":true}')
+            return
+        if parts[:3] == ["", "api", "displays"]:
+            try:
+                data = json.loads(raw or b"{}")
+            except ValueError:
+                data = {}
+            if len(parts) == 4 and parts[3] == "revoke":
+                display_revoke(str(data.get("id") or ""))
+                self.send(200, json.dumps({"displays": display_list()}).encode())
+            elif len(parts) == 3 and str(data.get("printer") or "").strip():
+                token = display_create(str(data["printer"]).strip())
+                self.send(200, json.dumps({"token": token, "displays": display_list()}).encode())
+            else:
+                self.send(400, b'{"error":"Choose a printer."}')
             return
         if parts == ["", "api", "config"]:
             try:
