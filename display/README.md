@@ -143,13 +143,13 @@ It asks the server every 10 seconds.
 type. Flash one of the other two files listed under "Flash the board". Flashing again
 keeps the Wi-Fi, server and token already entered.
 
-**Upside down.** The published files are built with `rotation: "270"`. For the other
-way up, build it yourself with `rotation: "90"` and both `touch_mirror_x` and
-`touch_mirror_y` set to `"false"` at the top of `printer-display.yaml`.
+**Upside down.** On the board's settings page, switch **Screen: turn upside down** on
+(or off). The picture turns half a turn straight away, touch follows it, and the board
+remembers the choice, so it can be mounted with the USB sockets on either side.
 
 **Touch calibration.** Wherever you touch the screen, a small white ring appears for a
 moment at the spot the board thinks you touched. If the ring is somewhere else, the touch
-settings need adjusting: flip `touch_mirror_x` or `touch_mirror_y` at the top of
+settings need adjusting: change `touch_mirror_x` or `touch_mirror_y` at the top of
 `printer-display.yaml` if it is mirrored. For fine tuning, the board's own page shows a
 log line for each touch with the raw values; adjust the `calibration` numbers to match
 the corners.

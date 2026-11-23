@@ -255,6 +255,7 @@ Each board has its own settings page on your network, where you can also:
 - see which firmware version it is running;
 - check for a newer version, and install it over Wi-Fi, by hand or automatically;
 - upload a firmware file directly;
+- turn the picture upside down, for mounting either way round;
 - dim the screen.
 
 Full instructions, troubleshooting and how to build the firmware yourself are in
