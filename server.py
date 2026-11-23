@@ -1040,12 +1040,8 @@ def display_summary(name):
                        fil=[{"t": _fil_text(j["filaments"][i]),
                              "c": (j["filaments"][i].get("color") or "").lstrip("#")}
                             for i in j["missing_by"][name]][:4])
-    else:
-        want = (q.get("needs") or {}).get(name) or []
-        if want:
-            out.update(head="Load for waiting jobs:",
-                       fil=[{"t": _fil_text(f), "c": (f.get("color") or "").lstrip("#")}
-                            for f in want][:4])
+    # While the printer is busy the display shows nothing about waiting jobs: what to load
+    # only matters once the print is done. (The web page still shows it on busy printers.)
     # The display's font only has plain ASCII: swap the common extras, drop the rest.
     def plain(text):
         text = str(text).replace("\u2014", "-").replace("\u2013", "-").replace("\u2026", "...")
