@@ -77,6 +77,11 @@ the new one if needed). If it can't join, it stays on the network it had; the pa
 **Wi-Fi change: result** line says which happened. If the old network is already gone,
 the board returns to step 1 after about a minute instead.
 
+**Which version is it running?** The board's page has a **Firmware version** line, e.g.
+`2026.11.23-1a2b3c4 (ESP32-2432S028-7789)`: the build date, the commit it was built
+from, and the screen type. The start-up screen shows the version too. The same version
+is in the notes of the release you downloaded from.
+
 **Starting up.** After power-on the screen shows a start-up page ("Connecting to
 Wi-Fi…", then "Contacting server…") until the printer appears. The setup QR codes are
 only shown if the board actually needs setting up.

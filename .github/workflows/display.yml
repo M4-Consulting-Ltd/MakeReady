@@ -31,8 +31,10 @@ jobs:
       - name: Compile
         run: |
           mkdir out
+          version="$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}"     # shown on the board's settings page
+          echo "Firmware version: $version"
           build() {   # build <screen model> <file suffix>
-            esphome -s screen_model "$1" compile display/printer-display.yaml
+            esphome -s screen_model "$1" -s version "$version" compile display/printer-display.yaml
             cp display/.esphome/build/printer-display/build/firmware.factory.bin "out/printer-display$2.factory.bin"
             cp display/.esphome/build/printer-display/build/firmware.ota.bin "out/printer-display$2.ota.bin"
           }
@@ -49,7 +51,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          notes="Printer display firmware built from ${GITHUB_SHA}. Flash printer-display.factory.bin over USB; see display/README.md."
+          notes="Printer display firmware $(date -u +%Y.%m.%d)-${GITHUB_SHA::7}. Pick the file for your board's screen and flash it over USB; see display/README.md."
           if gh release view display-latest >/dev/null 2>&1; then
             gh release upload display-latest out/* --clobber
             gh release edit display-latest --notes "$notes"
