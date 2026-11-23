@@ -20,7 +20,10 @@ substitutions:
   #   ESP32-2432S028-7789  ST7789   (usually the micro-USB + USB-C board)
   #   ESP32-2432S028-9342  ILI9342  (some micro-USB + USB-C boards)
   screen_model: ESP32-2432S028
-  rotation: "90"                       # 90 or 270: which way up the landscape picture is
+  rotation: "270"                      # 90 or 270: which way up the landscape picture is
+  # Touch must match the rotation: for 90 use false / false, for 270 use true / true.
+  touch_mirror_x: "true"
+  touch_mirror_y: "true"
   # Optional: bake values in at build time instead of entering them on the board.
   default_server: ""
   default_token: ""
@@ -128,6 +131,12 @@ globals:
   - {id: g_state,  type: std::string, initial_value: '""'}
   - {id: g_status, type: std::string, initial_value: '""'}
   - {id: g_sub,    type: std::string, initial_value: '""'}
+  - {id: g_left,   type: std::string, initial_value: '""'}   # e.g. "8h 51m"
+  - {id: g_done,   type: std::string, initial_value: '""'}   # e.g. "18:57"
+  - {id: g_pct,    type: int,         initial_value: "-1"}   # print progress, -1 = unknown
+  - {id: g_touch_x, type: int,        initial_value: "0"}    # last touch, to show where it landed
+  - {id: g_touch_y, type: int,        initial_value: "0"}
+  - {id: g_touch_at, type: uint32_t,  initial_value: "0"}
   - {id: g_head,   type: std::string, initial_value: '""'}
   - {id: g_good,   type: bool,        initial_value: "false"}
   - {id: g_job,    type: std::string, initial_value: '""'}
@@ -187,6 +196,9 @@ script:
                           id(g_state)  = root["state"]  | "";
                           id(g_status) = root["status"] | "";
                           id(g_sub)    = root["sub"]    | "";
+                          id(g_left)   = root["left"]   | "";
+                          id(g_done)   = root["done"]   | "";
+                          id(g_pct)    = root["pct"]    | -1;
                           id(g_head)   = root["head"]   | "";
                           id(g_good)   = root["good"]   | false;
                           id(g_job)    = root["job"]    | "";
@@ -263,6 +275,7 @@ light:
     restore_mode: ALWAYS_ON
 
 font:
+  - {file: "gfonts://Roboto@500", id: f_huge,  size: 36}
   - {file: "gfonts://Roboto@500", id: f_big,   size: 24}
   - {file: "gfonts://Roboto",     id: f_text,  size: 18}
   - {file: "gfonts://Roboto",     id: f_small, size: 15}
@@ -357,13 +370,29 @@ display:
       it.print(12, 19, id(f_big), TEXT, TextAlign::CENTER_LEFT, fit(id(g_title), id(f_big), 260).c_str());
       it.filled_circle(298, 19, 9, dot);
 
-      it.print(12, 46, id(f_text), TEXT, fit(id(g_status), id(f_text), 296).c_str());
-      if (!id(g_sub).empty())
-        it.print(12, 70, id(f_small), MUTED, fit(id(g_sub), id(f_small), 296).c_str());
+      bool printing = st == "printing";
+      bool advice = !id(g_head).empty();
+      int y = 96;
+
+      if (printing && !advice && !id(g_left).empty()) {
+        // Printing with nothing to load: use the space for the two things worth reading
+        // from across the room.
+        it.print(12, 46, id(f_small), MUTED, "Estimated time left");
+        it.print(12, 62, id(f_huge), TEXT, id(g_left).c_str());
+        it.print(12, 112, id(f_small), MUTED, "Estimated completion");
+        it.print(12, 128, id(f_huge), TEXT, id(g_done).c_str());
+      } else if (printing) {
+        // Printing, with filament to load for a waiting job: times on one line, then advice.
+        it.print(12, 46, id(f_text), TEXT, fit(id(g_sub).empty() ? id(g_status) : id(g_sub), id(f_text), 296).c_str());
+        y = 74;
+      } else {
+        it.print(12, 46, id(f_text), TEXT, fit(id(g_status), id(f_text), 296).c_str());
+        if (!id(g_sub).empty())
+          it.print(12, 70, id(f_small), MUTED, fit(id(g_sub), id(f_small), 296).c_str());
+      }
 
       // Advice: a heading, the job, then the filament to load or a warning.
-      int y = 96;
-      if (!id(g_head).empty()) {
+      if (advice) {
         it.print(12, y, id(f_text), id(g_good) ? GREEN : RED, fit(id(g_head), id(f_text), 296).c_str());
         y += 24;
       }
@@ -372,8 +401,8 @@ display:
         y += 22;
       }
       bool button = !id(g_button).empty();
-      int bottom = button ? 182 : 236;
-      for (int i = 0; i < id(g_fil_n) && y + 20 <= bottom; i++) {
+      int bottom = (button || printing) ? 182 : 236;
+      for (int i = 0; advice && i < id(g_fil_n) && y + 20 <= bottom; i++) {
         uint32_t c = id(g_fil_c)[i];
         it.filled_circle(22, y + 10, 9, Color((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF));
         it.circle(22, y + 10, 9, MUTED);
@@ -383,13 +412,26 @@ display:
       if (!id(g_warn).empty() && y + 18 <= bottom)
         it.print(12, y, id(f_small), AMBER, fit(id(g_warn), id(f_small), 296).c_str());
 
-      // Set Ready: hold the button for a second.
+      // Bottom bar. Plate waiting: the Set Ready button (hold for a second).
+      // Printing: the same bar as a progress bar, filled in green as the print goes on.
       if (button) {
         bool held = id(btn_touch).state;
         it.filled_rectangle(10, 186, 300, 48, id(g_sending) ? MUTED : held ? GREEN : GO);
         it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER,
                  id(g_sending) ? "Sending..." : held ? "Keep holding..." : "Hold: Set Ready");
+      } else if (printing) {
+        int pct = id(g_pct) < 0 ? 0 : id(g_pct) > 100 ? 100 : id(g_pct);
+        it.filled_rectangle(10, 186, 300, 48, CARD);
+        if (pct > 0) it.filled_rectangle(10, 186, 300 * pct / 100, 48, GO);
+        it.rectangle(10, 186, 300, 48, GO);
+        std::string label = id(g_pct) < 0 ? std::string("PRINTING") : "PRINTING " + std::to_string(pct) + "%";
+        it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER, label.c_str());
       }
+
+      // A ring where the screen was last touched, for a moment, so a touch that lands in
+      // the wrong place is obvious.
+      if (id(g_touch_at) != 0 && millis() - id(g_touch_at) < 1500)
+        it.circle(id(g_touch_x), id(g_touch_y), 10, Color(255, 255, 255));
 
 touchscreen:
   - platform: xpt2046
@@ -407,8 +449,14 @@ touchscreen:
       y_max: 3860
     transform:
       swap_xy: true
-      mirror_x: false
-      mirror_y: false
+      mirror_x: ${touch_mirror_x}
+      mirror_y: ${touch_mirror_y}
+    on_touch:
+      - lambda: |-
+          id(g_touch_x) = touch.x;
+          id(g_touch_y) = touch.y;
+          id(g_touch_at) = millis();
+          ESP_LOGI("touch", "x=%d y=%d (raw %d, %d)", touch.x, touch.y, touch.x_raw, touch.y_raw);
 
 binary_sensor:
   # Finger on the button area: used to draw the "keep holding" state.
