@@ -84,6 +84,12 @@
   dialog .check input { margin-top: 3px; }
   dialog fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 14px;
                     padding: 10px 12px 12px; }
+  .disp-add { display: flex; gap: 8px; margin: 8px 0 12px; }
+  .disp-add select { flex: 1; min-width: 0; font: inherit; padding: 8px; color: var(--text);
+                     background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+  .disp-row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+              font-size: 14px; padding: 4px 0; }
+  .disp-row small { display: inline; margin: 0 0 0 6px; }
   dialog legend { font-size: 14px; font-weight: 600; padding: 0 4px; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .btns { display: flex; gap: 8px; margin-top: auto; }   /* buttons line up along the row */
@@ -190,6 +196,21 @@
       </label>
       <small>Camera pictures, the waiting-jobs list and loaded filament aren't covered by
         the API key, so they need a Watchtower login. Leave the username blank for none.</small>
+    </fieldset>
+    <fieldset>
+      <legend>Printer displays (optional)</legend>
+      <div id="disp-list"></div>
+      <div class="disp-add">
+        <select id="disp-printer" aria-label="Printer"></select>
+        <button type="button" id="disp-add" class="plain">Create token</button>
+      </div>
+      <label id="disp-token" hidden>Token for the new display
+        <input id="disp-token-value" readonly spellcheck="false">
+        <small>Copy it into the display's configuration now. It isn't shown again.</small>
+      </label>
+      <small>For a small screen on the front of a printer (see the <code>display</code>
+        folder). Each token works for one printer only: it can read that printer's
+        summary and press Set Ready, nothing else.</small>
     </fieldset>
     <fieldset>
       <legend>Page password</legend>
@@ -918,6 +939,43 @@ function keyHint() {
   $('cfg-logout').hidden = !hasPagePass;
 }
 
+// Printer displays: one access token per screen, each tied to one printer.
+function renderDisplays(list) {
+  const box = $('disp-list');
+  box.replaceChildren();
+  for (const d of list || []) {
+    const row = el('div', 'disp-row'), label = el('span', '', d.printer);
+    label.append(el('small', '', 'token ' + d.id + '…'));
+    const btn = el('button', 'plain', 'Revoke');
+    btn.type = 'button';
+    btn.addEventListener('click', async () => {
+      const r = await fetch('api/displays/revoke', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: d.id }) });
+      if (r.ok) renderDisplays((await r.json()).displays);
+    });
+    row.append(label, btn);
+    box.append(row);
+  }
+  const sel = $('disp-printer');
+  sel.replaceChildren(...[...cards.keys()].map(n => { const o = el('option', '', n); o.value = n; return o; }));
+  $('disp-add').disabled = !cards.size;
+}
+async function loadDisplays() {
+  $('disp-token').hidden = true;
+  try { renderDisplays((await (await fetch('api/displays', { cache: 'no-store' })).json()).displays); }
+  catch { renderDisplays([]); }
+}
+document.getElementById('disp-add').addEventListener('click', async () => {
+  const r = await fetch('api/displays', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ printer: $('disp-printer').value }) });
+  if (!r.ok) return;
+  const out = await r.json();
+  renderDisplays(out.displays);
+  $('disp-token-value').value = out.token;
+  $('disp-token').hidden = false;
+  $('disp-token-value').select();
+});
+
 async function openSettings() {
   if (dlg.open) return;
   $('cfg-error').textContent = '';
@@ -934,6 +992,7 @@ async function openSettings() {
     $('cfg-user').value = savedUser;
   } catch { /* server unreachable: the form still opens, saving will report it */ }
   keyHint();
+  loadDisplays();
   dlg.showModal();
 }
 
