@@ -622,8 +622,6 @@ display:
         if (id(g_q_more) > 0)
           it.print(160, 44 + id(g_q_n) * 44 + 1, id(f_small), MUTED, TextAlign::TOP_CENTER,
                    ("+" + std::to_string(id(g_q_more)) + " more").c_str());
-        if (id(g_touch_at) != 0 && millis() - id(g_touch_at) < 1500)
-          it.circle(id(g_touch_x), id(g_touch_y), 10, Color(255, 255, 255));
         return;
       }
 
@@ -692,11 +690,6 @@ display:
         std::string label = id(g_pct) < 0 ? std::string("PRINTING") : "PRINTING " + std::to_string(pct) + "%";
         it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER, label.c_str());
       }
-
-      // A ring where the screen was last touched, for a moment, so a touch that lands in
-      // the wrong place is obvious.
-      if (id(g_touch_at) != 0 && millis() - id(g_touch_at) < 1500)
-        it.circle(id(g_touch_x), id(g_touch_y), 10, Color(255, 255, 255));
 
 touchscreen:
   - platform: xpt2046
