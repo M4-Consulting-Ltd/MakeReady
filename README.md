@@ -228,7 +228,7 @@ standing at the machine can see what it needs without opening the page.
 |---|---|
 | Board | ESP32-2432S028, sold as the "Cheap Yellow Display": an ESP32 with a 2.8" 320×240 colour touch screen on one board |
 | Cost | Roughly £10–15 each |
-| Power | USB, about 0.6–0.75 W (120–150 mA at 5 V); any USB port or phone charger |
+| Power | USB, about 0.6–0.75 W (120–150 mA at 5 V); any USB port or phone charger. Can be powered from the USB port on a Bambu printer's AP board |
 | Network | Wi-Fi, 2.4 GHz only |
 | Screen types | Three look-alike variants (ILI9341, ST7789, ILI9342). There is a firmware file for each; boards with both a micro-USB and a USB-C socket have so far needed the ST7789 one |
 
