@@ -4,8 +4,9 @@ Gets each printer in a [Watchtower](https://watchtower3d.com) 3D-printer farm **
 for its next job**, so Watchtower can send it one.
 
 "Makeready" is the commercial printers' word for everything done to a press between one
-job and the next. (This project was called Watchtower-SetReady until November 2026; the
-repository, Docker image and download addresses still use that name.)
+job and the next. (This project was called Watchtower-SetReady until November 2026. The old
+repository address redirects here, and the Docker image is still published under its
+old name, `watchtower-setready`, as well as the new one.)
 
 Watchtower runs the queue: it decides which job goes to which printer and sends it.
 It can only do that once a printer has been cleared and marked ready, and has the
@@ -258,7 +259,7 @@ those work too, once reflashed.
 No software to install and nothing to edit; every board runs the same firmware.
 
 1. **Flash it once** from a browser: download the firmware from the
-   [display-latest release](https://github.com/M4-Consulting-Ltd/Watchtower-SetReady/releases/tag/display-latest)
+   [display-latest release](https://github.com/M4-Consulting-Ltd/MakeReady/releases/tag/display-latest)
    and install it with <https://web.esphome.io> over USB.
 2. **Scan the QR code** on the screen with a phone to join the board's own Wi-Fi, and
    choose your network.
@@ -307,7 +308,7 @@ Either way works; pick whichever suits the machine. Both keep their settings in 
 
 Copy `server.py` and `index.html` to a folder on any always-on machine with Python 3.8
 or later, and start `server.py` when the machine starts. On Linux with systemd, save
-this as `/etc/systemd/system/watchtower-setready.service` (adjust the folder and user):
+this as `/etc/systemd/system/makeready.service` (adjust the folder and user):
 
 ```ini
 [Unit]
@@ -316,20 +317,20 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-WorkingDirectory=/opt/watchtower-setready
-ExecStart=/usr/bin/python3 /opt/watchtower-setready/server.py
+WorkingDirectory=/opt/makeready
+ExecStart=/usr/bin/python3 /opt/makeready/server.py
 Environment=HOST=0.0.0.0
 Environment=PORT=8080
-User=setready
+User=makeready
 Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Then `sudo systemctl enable --now watchtower-setready`. The user needs to be able to
+Then `sudo systemctl enable --now makeready`. The user needs to be able to
 write to the folder, since `config.json` is saved there (or set `CONFIG_DIR` to another
-folder). To update, replace the two files and `sudo systemctl restart watchtower-setready`.
+folder). To update, replace the two files and `sudo systemctl restart makeready`.
 
 On Windows, run `python server.py` from Task Scheduler with the trigger "At startup";
 on macOS, from a launchd agent.
@@ -339,17 +340,17 @@ on macOS, from a launchd agent.
 The image listens on port 8080 and keeps `config.json` in `/config`.
 
 ```bash
-docker run -d --name watchtower-setready --restart unless-stopped \
+docker run -d --name makeready --restart unless-stopped \
   -p 8090:8080 -v /path/to/settings:/config \
-  ghcr.io/m4-consulting-ltd/watchtower-setready:latest
+  ghcr.io/m4-consulting-ltd/makeready:latest
 ```
 
 Or with Docker Compose:
 
 ```yaml
 services:
-  watchtower-setready:
-    image: ghcr.io/m4-consulting-ltd/watchtower-setready:latest
+  makeready:
+    image: ghcr.io/m4-consulting-ltd/makeready:latest
     restart: unless-stopped
     ports:
       - "8090:8080"
@@ -364,7 +365,7 @@ the mounted folder.
 
 The image is built and pushed to GitHub's container registry by
 `.github/workflows/docker.yml` on every change to `main`. To build it yourself instead,
-run `docker build -t watchtower-setready .` in this folder.
+run `docker build -t makeready .` in this folder.
 
 ## Security
 
