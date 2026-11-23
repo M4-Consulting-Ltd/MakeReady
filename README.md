@@ -34,7 +34,7 @@ with or endorsed by Watchtower.
 - [Settings](#settings)
 - [Using the page](#using-the-page)
 - [Printer displays](#printer-displays)
-- [Docker and Unraid](#docker-and-unraid)
+- [Running it permanently](#running-it-permanently)
 - [Security](#security)
 - [How it works](#how-it-works)
 - [Limitations](#limitations)
@@ -42,8 +42,9 @@ with or endorsed by Watchtower.
 
 ## Quick start
 
-Needs Python 3.8 or later and nothing else. For Docker or Unraid, see
-[below](#docker-and-unraid).
+Needs Python 3.8 or later and nothing else: no packages to install. It runs the same on
+Linux, macOS and Windows. To keep it running, as a service or in Docker, see
+[below](#running-it-permanently).
 
 1. In Watchtower, create an API key (starts with `wt_`) with the `control` scope,
    allowed to send `set_ready` and, for the other buttons, `resume`, `pause` and `cancel`.
@@ -280,7 +281,43 @@ Running on real two-socket boards with the ST7789 screen: flashing, on-screen se
 the printer screens and live data all work. The touch button, the swipe to the queue
 page and the over-Wi-Fi update have been built but not yet confirmed on hardware.
 
-## Docker and Unraid
+## Running it permanently
+
+Either way works; pick whichever suits the machine. Both keep their settings in one
+`config.json`.
+
+### Without Docker
+
+Copy `server.py` and `index.html` to a folder on any always-on machine with Python 3.8
+or later, and start `server.py` when the machine starts. On Linux with systemd, save
+this as `/etc/systemd/system/watchtower-setready.service` (adjust the folder and user):
+
+```ini
+[Unit]
+Description=Watchtower SetReady
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/watchtower-setready
+ExecStart=/usr/bin/python3 /opt/watchtower-setready/server.py
+Environment=HOST=0.0.0.0
+Environment=PORT=8080
+User=setready
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then `sudo systemctl enable --now watchtower-setready`. The user needs to be able to
+write to the folder, since `config.json` is saved there (or set `CONFIG_DIR` to another
+folder). To update, replace the two files and `sudo systemctl restart watchtower-setready`.
+
+On Windows, run `python server.py` from Task Scheduler with the trigger "At startup";
+on macOS, from a launchd agent.
+
+### Docker
 
 The image listens on port 8080 and keeps `config.json` in `/config`.
 
@@ -290,28 +327,27 @@ docker run -d --name watchtower-setready --restart unless-stopped \
   ghcr.io/m4-consulting-ltd/watchtower-setready:latest
 ```
 
+Or with Docker Compose:
+
+```yaml
+services:
+  watchtower-setready:
+    image: ghcr.io/m4-consulting-ltd/watchtower-setready:latest
+    restart: unless-stopped
+    ports:
+      - "8090:8080"
+    volumes:
+      - ./settings:/config
+```
+
+The page is then at `http://<host>:8090`. Open it, fill in Settings and set a page
+password. To update, pull the new image and recreate the container
+(`docker compose pull && docker compose up -d`); settings are kept, since they live in
+the mounted folder.
+
 The image is built and pushed to GitHub's container registry by
 `.github/workflows/docker.yml` on every change to `main`. To build it yourself instead,
 run `docker build -t watchtower-setready .` in this folder.
-
-### Unraid
-
-1. Copy `unraid/watchtower-setready.xml` to the flash drive as
-   `/boot/config/plugins/dockerMan/templates-user/my-watchtower-setready.xml`
-   (over the network that is the `flash` share, folder
-   `config/plugins/dockerMan/templates-user`).
-2. In Unraid: **Docker → Add Container → Template → watchtower-setready**, check the
-   port (default 8090) and settings folder (default
-   `/mnt/user/appdata/watchtower-setready`), then **Apply**.
-3. Open the container's **WebUI**, fill in Settings and set a page password.
-
-On a custom network such as `br0` the container has its own IP address and Unraid
-ignores the port mapping: the page is at `http://<container-ip>:8080`. To use another
-port there, add a `PORT` variable to the container.
-
-To update: **Docker → Check for Updates**, then update the container. If it reports
-"up-to-date" straight after a new build, edit the container and **Apply** without
-changes to force a fresh pull. Settings are kept, since they live in the settings folder.
 
 ## Security
 

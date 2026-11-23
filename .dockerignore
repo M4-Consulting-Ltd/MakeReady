@@ -2,7 +2,6 @@
 .github
 config.json
 __pycache__
-unraid
 *.md
 docs
 display
