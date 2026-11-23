@@ -150,9 +150,9 @@ With the Watchtower login set:
   spools with a tag can be read this way. Below it, advice
   about the queue:
   - *Idle printer* (plate waiting, or ready): either **Set Ready can pick up a waiting
-    job**, naming the oldest job its loaded filament can run, or **No waiting job can
-    run here yet**, with the job that is the closest match (fewest filaments to load;
-    the oldest job wins a tie) and exactly what to load for it.
+    job**, naming the job highest in Watchtower's queue that its loaded filament can
+    run, or **No waiting job can run here yet**, with the job highest in the queue and
+    exactly what to load for it. Reorder the queue in Watchtower and the advice follows.
     If the job needs more of a filament than is left on the loaded spool, the card says
     **Not enough filament loaded**, and pressing Set Ready asks first; you can carry on
     anyway.
