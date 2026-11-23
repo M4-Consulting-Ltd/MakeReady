@@ -41,6 +41,8 @@ esphome:
     name: m4consulting.printer-display
     version: "${version}"
   name_add_mac_suffix: true            # one firmware for every board, unique names
+  includes:
+    - board-name.h                     # changing the name on the network
   on_boot:
     priority: -100
     then:
@@ -77,6 +79,8 @@ wifi:
   on_disconnect:
     - script.execute: fetch
 
+mdns:
+
 improv_serial:                         # lets the browser flasher set Wi-Fi over USB too
 
 captive_portal:
@@ -109,6 +113,16 @@ text:
     initial_value: "${default_server}"
     on_value:
       - script.execute: fetch
+  # The board's name on the network. Blank = the built-in printer-display-xxxxxx.
+  - platform: template
+    id: cfg_name
+    name: Board name on the network
+    icon: mdi:tag-text
+    mode: text
+    optimistic: true
+    restore_value: true
+    max_length: 31
+    initial_value: ""
   - platform: template
     id: cfg_token
     name: Display token
@@ -226,6 +240,9 @@ text_sensor:
       name: Wi-Fi network in use
     scan_results:
       name: Wi-Fi networks nearby          # what the settings page offers to move to
+  - platform: template
+    id: name_in_use
+    name: Network name in use
   - platform: template
     id: wifi_change
     name: "Wi-Fi change: result"
@@ -409,6 +426,14 @@ script:
       - script.execute: fetch
 
 interval:
+  # Keep the chosen name on the network in place (see board-name.h).
+  - interval: 1s
+    then:
+      - lambda: |-
+          std::string n = board_name::tidy(id(cfg_name).state);
+          if (n.empty()) n = App.get_name().c_str();
+          board_name::apply(n, wifi::global_wifi_component->is_connected());
+          if (id(name_in_use).state != n) id(name_in_use).publish_state(n);
   - interval: ${refresh}
     then:
       - script.execute: fetch
