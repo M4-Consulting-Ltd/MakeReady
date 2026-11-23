@@ -25,10 +25,11 @@ substitutions:
   #   ESP32-2432S028-7789  ST7789   (usually the micro-USB + USB-C board)
   #   ESP32-2432S028-9342  ILI9342  (some micro-USB + USB-C boards)
   screen_model: ESP32-2432S028
-  rotation: "270"                      # 90 or 270: which way up the landscape picture is
-  # Touch must match the rotation: for 90 use false / false, for 270 use true / true.
-  touch_mirror_x: "true"
-  touch_mirror_y: "true"
+  # Which way up the picture is can be changed on the board's own settings page
+  # ("Screen: turn upside down"), so these only set how a new board starts out.
+  rotation: "90"
+  touch_mirror_x: "false"
+  touch_mirror_y: "false"
   # Optional: bake values in at build time instead of entering them on the board.
   default_server: ""
   default_token: ""
@@ -46,6 +47,7 @@ esphome:
       - output.turn_off: led_red
       - output.turn_off: led_green
       - output.turn_off: led_blue
+      - script.execute: apply_orientation
       - script.execute: fetch
 
 esp32:
@@ -147,6 +149,18 @@ update:
             - update.perform: fw_update
 
 switch:
+  # Turn the picture, and the touch with it, the other way up. Remembered by the board, so
+  # it can be mounted with the USB socket on either side.
+  - platform: template
+    id: flip_screen
+    name: "Screen: turn upside down"
+    icon: mdi:phone-rotate-landscape
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      - script.execute: apply_orientation
+    on_turn_off:
+      - script.execute: apply_orientation
   - platform: template
     id: auto_update
     name: Install updates automatically
@@ -262,6 +276,19 @@ globals:
   - {id: g_sw_y,    type: int,        initial_value: "0"}
 
 script:
+  # Apply the "turn upside down" setting: rotate the picture half a turn and mirror the
+  # touch both ways so a touch still lands where it is drawn.
+  - id: apply_orientation
+    then:
+      - lambda: |-
+          bool base_90 = ${rotation} == 90;
+          bool flipped = id(flip_screen).state;
+          bool use_90 = base_90 != flipped;
+          id(screen).set_rotation(use_90 ? display::DISPLAY_ROTATION_90_DEGREES
+                                         : display::DISPLAY_ROTATION_270_DEGREES);
+          id(touch).set_mirror_x(${touch_mirror_x} != flipped);
+          id(touch).set_mirror_y(${touch_mirror_y} != flipped);
+      - component.update: screen
   - id: fetch
     mode: restart
     then:
