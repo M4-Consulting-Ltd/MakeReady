@@ -27,15 +27,18 @@ jobs:
           python-version: "3.12"
       - name: Install ESPHome
         run: pip install esphome==2026.11.0
+      # One firmware per screen type these boards ship with; the rest is identical.
       - name: Compile
-        run: esphome compile display/printer-display.yaml
-      - name: Collect the firmware
         run: |
           mkdir out
-          cp display/.esphome/build/printer-display/build/firmware.factory.bin \
-             out/printer-display.factory.bin
-          cp display/.esphome/build/printer-display/build/firmware.ota.bin \
-             out/printer-display.ota.bin
+          build() {   # build <screen model> <file suffix>
+            esphome -s screen_model "$1" compile display/printer-display.yaml
+            cp display/.esphome/build/printer-display/build/firmware.factory.bin "out/printer-display$2.factory.bin"
+            cp display/.esphome/build/printer-display/build/firmware.ota.bin "out/printer-display$2.ota.bin"
+          }
+          build ESP32-2432S028 ""
+          build ESP32-2432S028-7789 -st7789
+          build ESP32-2432S028-9342 -ili9342
           ls -l out
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
