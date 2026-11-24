@@ -265,7 +265,7 @@ standing at the machine can see what it needs without opening the page.
 | Cost | Roughly £10–15 each |
 | Power | USB, about 0.6–0.75 W (120–150 mA at 5 V); any USB port or phone charger. Can be powered from the USB port on a Bambu printer's AP board |
 | Network | Wi-Fi, 2.4 GHz only |
-| Screen types | Three look-alike variants (ILI9341, ST7789, ILI9342). There is a firmware file for each; boards with both a micro-USB and a USB-C socket have so far needed the ST7789 one |
+| Screen types | Three look-alike variants (ILI9341, ST7789, ILI9342). There is a firmware file for each; boards with both a micro-USB and a USB-C socket have so far needed the ST7789 one. The orange LCDWiki 2.8inch ESP32-32E board (E32R28T) also works, with the ILI9341 file |
 
 The same boards are often sold pre-loaded as desktop crypto "lottery miner" gadgets;
 those work too, once reflashed.

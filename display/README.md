@@ -14,7 +14,8 @@ steps and the printer screen work. The touch button has not been tried yet.
 
 - An **ESP32-2432S028** board ("Cheap Yellow Display"): 2.8" 320×240 screen, single
   micro-USB port. The `R` version has resistive touch; without touch it still works as a
-  display, but the Set Ready button can't be pressed.
+  display, but the Set Ready button can't be pressed. The orange **LCDWiki 2.8inch
+  ESP32-32E** board (E32R28T, USB-C) uses the same pins and also works.
 - A micro-USB **data** cable and a computer with Chrome or Edge, for the one-off flash.
 - A phone, for the setup steps.
 - The MakeReady server reachable from your Wi-Fi (2.4 GHz), with the Watchtower login set
@@ -32,9 +33,12 @@ its Wi-Fi, server and token after it starts.
 
    | File | Screen | Usually found on |
    |---|---|---|
-   | `printer-display.factory.bin` | ILI9341 | boards with a single micro-USB port |
+   | `printer-display.factory.bin` | ILI9341 | boards with a single micro-USB port; the LCDWiki ESP32-32E board (confirmed on one) |
    | `printer-display-st7789.factory.bin` | ST7789 | boards with micro-USB and USB-C (confirmed on one) |
    | `printer-display-ili9342.factory.bin` | ILI9342 | some boards with micro-USB and USB-C |
+
+   A screen that stays **white** with the backlight on means the file is for a different
+   screen chip: flash one of the other two. Nothing is harmed by trying.
 
 2. Plug the board into the computer and open <https://web.esphome.io> in Chrome or Edge.
 3. Click **Connect**, pick the board's serial port, then **Install** and choose the file.
