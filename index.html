@@ -5,6 +5,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MakeReady</title>
+<!-- The icon: a nozzle above a clear plate, with a tick. Also docs/icon.svg. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%231b1e24%22/%3E%3Cpath d=%22M23 9h18v9l-6 8h-6l-6-8z%22 fill=%22%23eceef2%22/%3E%3Cpath d=%22M20 38l8 8 16-17%22 fill=%22none%22 stroke=%22%2335b765%22 stroke-width=%226.5%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3Crect x=%2210%22 y=%2250%22 width=%2244%22 height=%226%22 rx=%223%22 fill=%22%23eceef2%22/%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #f4f5f7; --card: #fff; --text: #16181d; --muted: #667085; --line: #dde1e7;
@@ -21,7 +23,8 @@
   /* Row 1: title + Settings. Row 2: counts + last update. Same on phone and desktop. */
   header { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 12px;
            padding: 16px; max-width: var(--page); margin: 0 auto; }
-  h1 { font-size: 20px; margin: 0; }
+  h1 { font-size: 20px; margin: 0; display: flex; align-items: center; gap: 10px; }
+  h1 .logo { width: 28px; height: 28px; flex: none; }
   #open-settings { grid-row: 1; grid-column: 2; justify-self: end; }
   #summary { grid-row: 2; grid-column: 1; color: var(--muted); font-size: 14px; }
   #updated { grid-row: 2; grid-column: 2; color: var(--muted); font-size: 13px;
@@ -47,8 +50,15 @@
   .model { color: var(--muted); font-size: 13px; }
   .model:empty, .eta:empty, .msg:empty { display: none; }
   .status { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-  .eta { font-size: 13px; color: var(--muted); margin-top: -6px;
-         font-variant-numeric: tabular-nums; }
+  /* Time left and finish time, large enough to read from across the room. */
+  .eta { display: flex; gap: 8px 28px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+  .eta div { min-width: 0; }
+  .eta small { display: block; font-size: 12px; color: var(--muted); }
+  .eta b { display: block; font-size: 28px; font-weight: 600; line-height: 1.15; }
+  /* While printing, the main button is a progress bar that fills as the print goes on. */
+  .printing .main { opacity: 1; border-color: var(--go); color: var(--text);
+                    background: linear-gradient(90deg, color-mix(in srgb, var(--go) 45%, transparent) var(--pct, 0%),
+                                                transparent 0); }
   .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); flex: none; }
   .printing .dot { animation: breathe 2.4s ease-in-out infinite; }
   .paused .dot { animation: breathe .5s steps(2) infinite; }
@@ -184,7 +194,7 @@
 </head>
 <body>
 <header>
-  <h1>MakeReady</h1>
+  <h1><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#1b1e24"/><path d="M23 9h18v9l-6 8h-6l-6-8z" fill="#eceef2"/><path d="M20 38l8 8 16-17" fill="none" stroke="#35b765" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="10" y="50" width="44" height="6" rx="3" fill="#eceef2"/></svg>MakeReady</h1>
   <span id="summary"></span>
   <span id="updated"></span>
   <button type="button" id="open-settings" class="plain">Settings</button>
@@ -371,17 +381,16 @@ function minutesLeft(p) {
   return null;
 }
 
-// "1h 23m left · done 14:35" (with the weekday if it finishes on another day)
-function etaText(p, withFinish) {
+// Time left ("1h 23m") and when that is ("14:35", with the weekday if it is another day).
+function etaParts(p) {
   const m = minutesLeft(p);
-  if (m === null) return '';
-  const mins = Math.round(m), h = Math.floor(mins / 60);
-  const left = mins < 1 ? 'Under a minute left' : (h ? h + 'h ' : '') + (mins % 60) + 'm left';
-  if (!withFinish) return left;        // a paused job has no meaningful finish time
+  if (m === null) return null;
+  const mins = Math.round(m), hrs = Math.floor(mins / 60);
   const end = new Date(Date.now() + m * 60000);
   const opts = { hour: 'numeric', minute: '2-digit' };
   if (end.toDateString() !== new Date().toDateString()) opts.weekday = 'short';
-  return left + ' · done ' + end.toLocaleTimeString([], opts);
+  return { left: mins < 1 ? 'Under 1m' : (hrs ? hrs + 'h ' : '') + (mins % 60) + 'm',
+           done: end.toLocaleTimeString([], opts) };
 }
 
 // Accept {data:{printers:[...]}}, {data:[...]}, {printers:[...]} or a bare array.
@@ -458,14 +467,23 @@ function render(printers) {
     c.state = state;
     c.el.className = 'card ' + state + (sending ? ' sending' : '');
     c.el.querySelector('.model').textContent = p.model || '';
-    let label = LABEL[state][0];
-    if (state === 'printing' && typeof p.progress === 'number')
-      label += ' ' + Math.round(p.progress) + '%';        // Watchtower reports 0-100
-    c.el.querySelector('.label').textContent = label;
-    c.el.querySelector('.eta').textContent =
-      state === 'printing' ? etaText(p, true) : state === 'paused' ? etaText(p, false) : '';
+    c.el.querySelector('.label').textContent = LABEL[state][0];
+    // Large time left and finish time, as on the printer displays. A paused job has no
+    // meaningful finish time, so it shows only what is left.
+    const eta = c.el.querySelector('.eta');
+    const t = state === 'printing' || state === 'paused' ? etaParts(p) : null;
+    eta.replaceChildren();
+    if (t) {
+      const cell = (head, value) => { const d = el('div'); d.append(el('small', '', head), el('b', '', value)); return d; };
+      eta.append(cell(state === 'paused' ? 'Time left once resumed' : 'Estimated time left', t.left));
+      if (state === 'printing') eta.append(cell('Estimated completion', t.done));
+    }
     const btn = c.el.querySelector('.main');
-    const text = armed ? 'Tap again to resume' : LABEL[state][1];
+    const pct = state === 'printing' && typeof p.progress === 'number'
+      ? Math.max(0, Math.min(100, Math.round(p.progress))) : null;   // Watchtower reports 0-100
+    btn.style.setProperty('--pct', (pct || 0) + '%');
+    const text = armed ? 'Tap again to resume'
+      : pct !== null ? 'Printing ' + pct + '%' : LABEL[state][1];
     c.el.classList.toggle('armed', armed);
     btn.textContent = sending ? 'Sending…' : text;
     btn.setAttribute('aria-disabled', !(state === 'plate' || state === 'paused') || sending);

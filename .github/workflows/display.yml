@@ -60,6 +60,9 @@ jobs:
           if gh release view display-latest >/dev/null 2>&1; then
             gh release upload display-latest out/* --clobber
             gh release edit display-latest --notes "$notes"
+            # Keep the release's tag on the commit the files were built from.
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/display-latest" \
+              -f sha="$GITHUB_SHA" -F force=true >/dev/null
           else
             gh release create display-latest out/* --title "Printer display firmware" \
               --notes "$notes" --prerelease --target "$GITHUB_SHA"

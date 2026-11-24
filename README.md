@@ -1,12 +1,12 @@
-# MakeReady
+# <img src="docs/icon.svg" alt="" width="32" height="32" align="top"> MakeReady
 
 Gets each printer in a [Watchtower](https://watchtower3d.com) 3D-printer farm **ready
 for its next job**, so Watchtower can send it one.
 
 "Makeready" is the commercial printers' word for everything done to a press between one
 job and the next. (This project was called Watchtower-SetReady until November 2026. The old
-repository address redirects here, and the Docker image is still published under its
-old name, `watchtower-setready`, as well as the new one.)
+repository address redirects here; the Docker image is now only published as
+`makeready`.)
 
 Watchtower runs the queue: it decides which job goes to which printer and sends it.
 It can only do that once a printer has been cleared and marked ready, and has the
@@ -143,7 +143,7 @@ same name. Environment variables win.
 |---|---|---|
 | Green | Ready for the next job | **Not ready**: takes a Set Ready back, until a job is sent (needs the Watchtower login) |
 | Red dot, solid green button | Plate waiting to be cleared | **Plate cleared – Set Ready**: press once the plate is clear |
-| Red, slow pulse | Printing, with progress, time left and finish time | Small **pause** and **stop** buttons |
+| Red, slow pulse | Printing: time left and finish time in large type, and a bar that fills with the progress | Small **pause** and **stop** buttons |
 | Red, fast blink | Paused or error, with time left | **Resume print** and a small **stop** button |
 | Amber | Watchtower reports the printer offline | None |
 
