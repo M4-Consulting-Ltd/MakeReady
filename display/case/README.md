@@ -21,7 +21,7 @@ window against the picture, before relying on it.
 |---|---|
 | `esp32-32e-fit-test.stl` | A 3 mm slice of the back shell. Prints in a few minutes; lay the board on it to check the outline, the four holes and the USB slot. |
 | `esp32-32e-case-back.stl` | The back shell: 90.6 × 54.6 × 12.9 mm. |
-| `esp32-32e-case-front.stl` | The surround: 2 mm thick, with four feet that reach past the glass to the PCB. |
+| `esp32-32e-case-front.stl` | The surround: 2 mm thick, with four feet that reach past the glass to the PCB and a tongue that closes the USB slot above the plug. |
 
 ## Printing and fitting
 

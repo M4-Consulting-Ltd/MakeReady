@@ -44,6 +44,8 @@ HEAD_D, HEAD_SINK = 6.2, 1.0     # recess for the screw heads
 THROUGH_D = 3.4                  # clearance hole for an M3 screw
 BOSS_D = 6.0                     # the surround's feet on the PCB: small, to stay clear of the glass
 USB_W = 13.5                     # width of the slot for the cable's plug
+USB_PLUG_H = 7.2                 # height of a USB-C plug's body, centred on the socket
+USB_SOCKET_H = 3.2               # the socket itself, which hangs below the PCB's back face
 CORNER = 3.0                     # outside corner radius
 
 POST_H = BACK_PARTS + POST_GAP                 # floor to the back of the PCB
@@ -107,6 +109,12 @@ def surround():
             part += m3.Manifold.cylinder(boss_h, BOSS_D / 2, BOSS_D / 2, 48).translate((x, y, FRONT))
             part -= m3.Manifold.cylinder(FRONT + boss_h + 2, THROUGH_D / 2, THROUGH_D / 2, 32).translate((x, y, -1))
             part -= m3.Manifold.cylinder(HEAD_SINK + 1, HEAD_D / 2, HEAD_D / 2, 32).translate((x, y, -1))
+    # The shell's USB slot is open to the top so the board can drop in. This tongue hangs
+    # from the surround into the slot and closes the part of it above the plug.
+    plug_top = FLOOR + POST_H - USB_SOCKET_H / 2 + USB_PLUG_H / 2
+    tongue = HEIGHT - (plug_top + 0.4)
+    if tongue > 0.6:
+        part += box(WALL, USB_W - 0.5, tongue).translate((-(IN_L / 2 + WALL / 2), -(PCB_W / 2 - USB_OFFSET), FRONT))
     return part
 
 
