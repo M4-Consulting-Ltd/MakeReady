@@ -24,19 +24,24 @@ It started as virtual Set Ready buttons, doing the job of the
 [ClearCue](https://github.com/ThePrintBench/ClearCue) hardware buttons without buying or
 building any. Open it on a phone, a tablet or a wall-mounted display.
 
-For each printer it shows:
+With just a Watchtower API key, it shows for each printer:
 
 - its state, progress, time left and finish time;
-- a **Set Ready** button when the plate is waiting to be cleared, and **Not ready** to
-  take it back;
-- when Watchtower is sending it a job, with progress;
-- **pause**, **stop** and **resume** buttons, each with a confirmation;
-- a camera snapshot (optional);
-- the filament loaded in its slots (optional).
+- a **Set Ready** button when the plate is waiting to be cleared;
+- **pause**, **stop** and **resume** buttons, each with a confirmation.
 
-Under the printers, a **Waiting jobs** list (optional) shows what each queued job needs
-and which printer could run it, or what would have to be loaded where. A job made from a
-shop order has the order number in brackets before its name.
+Add a Watchtower username and password in Settings and it also shows:
+
+- a camera snapshot of each printer;
+- the filament loaded in each printer's slots, and what to load for the waiting jobs;
+- when Watchtower is sending a printer a job, with progress;
+- a **Not ready** button, to take a Set Ready back;
+- a **Waiting jobs** list under the printers: what each queued job needs and which
+  printer could run it, or what would have to be loaded where. A job made from a shop
+  order has the order number in brackets before its name.
+
+Those need the login because Watchtower's API key doesn't cover cameras, the queue or
+loaded filament; see [Cameras and queue](#cameras-and-queue-optional).
 
 It can also drive a small **touch screen on the front of each printer**, showing that
 printer's progress and what to load next, with its own Set Ready button. The page lists

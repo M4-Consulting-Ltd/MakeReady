@@ -93,6 +93,26 @@
   dialog { width: min(440px, calc(100vw - 32px)); border: 1px solid var(--line);
            border-radius: 12px; background: var(--card); color: var(--text); padding: 20px; }
   dialog::backdrop { background: rgba(0, 0, 0, .5); }
+  /* Settings: two columns on a wide screen, the whole screen on a phone. The buttons stay
+     in view while the rest scrolls. */
+  #settings { width: min(1000px, calc(100vw - 32px)); max-width: none;
+              max-height: calc(100dvh - 32px); padding: 0; overflow: hidden; }
+  #settings[open] { display: flex; }
+  #settings form { display: flex; flex-direction: column; min-height: 0; width: 100%; }
+  #settings h2 { margin: 0; padding: 16px 20px 12px; }
+  #settings .set-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 20px 6px;
+                        display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                        gap: 0 20px; align-items: start; }
+  #settings #cfg-error { padding: 0 20px; }
+  #settings .actions { margin: 0; padding: 12px 20px; border-top: 1px solid var(--line); }
+  @media (max-width: 760px) {
+    #settings { width: 100vw; height: 100dvh; max-height: none; margin: 0; border: 0;
+                border-radius: 0; }
+    #settings .set-body { grid-template-columns: minmax(0, 1fr); padding: 4px 14px 6px; }
+    #settings h2 { padding: 14px 14px 10px; }
+    #settings .actions { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+    #settings #cfg-error { padding: 0 14px; }
+  }
   dialog h2 { font-size: 18px; margin: 0 0 14px; }
   dialog label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 14px; }
   dialog input:not([type=checkbox]) { display: block; width: 100%; margin-top: 4px; padding: 9px 10px;
@@ -223,7 +243,11 @@
 </header>
 <dialog id="settings">
   <form id="settings-form">
-    <h2>Watchtower connection</h2>
+    <h2>Settings</h2>
+    <div class="set-body">
+    <div class="set-col">
+    <fieldset>
+      <legend>Watchtower connection</legend>
     <label>Watchtower address
       <input id="cfg-url" required autocomplete="off" spellcheck="false"
              placeholder="192.168.1.50 or https://192.168.1.50:8443">
@@ -239,6 +263,7 @@
         <small>Needed for https unless Watchtower's CA certificate file is set on the
           server. The connection is still encrypted, but not verified.</small></span>
     </label>
+    </fieldset>
     <fieldset>
       <legend>Cameras and queue (optional)</legend>
       <label>Watchtower username
@@ -251,6 +276,19 @@
       <small>Camera pictures, the waiting-jobs list and loaded filament aren't covered by
         the API key, so they need a Watchtower login. Leave the username blank for none.</small>
     </fieldset>
+    <fieldset>
+      <legend>Page password</legend>
+      <label>New password
+        <input id="cfg-pagepass" type="password" autocomplete="new-password" minlength="8">
+        <small id="cfg-pagepass-hint"></small>
+      </label>
+      <label class="check" id="cfg-remove-row" hidden><input id="cfg-remove" type="checkbox">
+        <span>Remove the password
+          <small>Anyone who can reach this page will be able to use it.</small></span>
+      </label>
+    </fieldset>
+    </div>
+    <div class="set-col">
     <fieldset>
       <legend>Printer displays (optional)</legend>
       <div id="disp-head" class="disp-head"></div>
@@ -285,17 +323,8 @@
         <small id="disp-all-note">Applies to every display within about 10 seconds.</small>
       </div>
     </fieldset>
-    <fieldset>
-      <legend>Page password</legend>
-      <label>New password
-        <input id="cfg-pagepass" type="password" autocomplete="new-password" minlength="8">
-        <small id="cfg-pagepass-hint"></small>
-      </label>
-      <label class="check" id="cfg-remove-row" hidden><input id="cfg-remove" type="checkbox">
-        <span>Remove the password
-          <small>Anyone who can reach this page will be able to use it.</small></span>
-      </label>
-    </fieldset>
+    </div>
+    </div>
     <div id="cfg-error" class="msg" role="alert"></div>
     <div class="actions">
       <button type="button" id="cfg-logout" class="plain" hidden style="margin-right:auto">Log out</button>
