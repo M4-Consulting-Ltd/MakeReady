@@ -218,6 +218,10 @@ values; adjust the `calibration` numbers to match the corners.
 The board's settings page has no login, like the board itself: anyone on your Wi-Fi who
 opens its address can change the server or token. The token is never shown back.
 
+## A case
+
+There is a printable case for the 2.8inch ESP32-32E board in [`case/`](case/README.md).
+
 ## What a display is allowed to do
 
 A token works for one printer only. With it, a display can read that printer's summary
