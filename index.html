@@ -40,6 +40,7 @@
   .cam { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px;
          background: #000; display: block; }
   .cam[hidden] { display: none; }
+  [hidden] { display: none !important; }
   #camnote { max-width: var(--page); margin: -8px auto 10px; padding: 0 16px; font-size: 13px;
              color: var(--muted); }
   .name { font-weight: 600; overflow-wrap: anywhere; }
@@ -90,6 +91,19 @@
   .disp-row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
               font-size: 14px; padding: 4px 0; }
   .disp-row small { display: inline; margin: 0 0 0 6px; }
+  .disp-row .who { min-width: 0; flex: 1; }
+  .disp-row .meta { display: block; margin: 2px 0 0; color: var(--muted); font-size: 13px;
+                    overflow-wrap: anywhere; }
+  .disp-row .meta a { color: inherit; }
+  .disp-row .dot2 { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+                    background: var(--grey); margin-right: 6px; }
+  .disp-row .dot2.on { background: var(--green); }
+  .disp-row .warn { color: var(--amber); }
+  .disp-row .bad { color: var(--red); }
+  .disp-row .acts { display: flex; gap: 6px; flex: none; }
+  .disp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+               font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .disp-head:empty { display: none; }
   dialog legend { font-size: 14px; font-weight: 600; padding: 0 4px; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .btns { display: flex; gap: 8px; margin-top: auto; }   /* buttons line up along the row */
@@ -207,6 +221,7 @@
     </fieldset>
     <fieldset>
       <legend>Printer displays (optional)</legend>
+      <div id="disp-head" class="disp-head"></div>
       <div id="disp-list"></div>
       <div class="disp-add">
         <select id="disp-printer" aria-label="Printer"></select>
@@ -218,7 +233,9 @@
       </label>
       <small>For a small screen on the front of a printer (see the <code>display</code>
         folder). Each token works for one printer only: it can read that printer's
-        summary and press Set Ready, nothing else.</small>
+        summary, press Set Ready or take it back, and resume a paused print, nothing else.
+        The list shows which displays are connected and lets you update their firmware
+        from here, a few at a time.</small>
     </fieldset>
     <fieldset>
       <legend>Page password</legend>
@@ -968,12 +985,62 @@ function keyHint() {
 }
 
 // Printer displays: one access token per screen, each tied to one printer.
+function ago(s) {
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.round(s / 60) + ' min ago';
+  if (s < 172800) return Math.round(s / 3600) + ' h ago';
+  return Math.round(s / 86400) + ' days ago';
+}
+async function updateDisplays(ids) {
+  const r = await fetch('api/displays/update', { method: 'POST',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ids ? { ids } : {}) });
+  if (r.ok) renderDisplays((await r.json()).displays);
+}
 function renderDisplays(list) {
-  const box = $('disp-list');
+  list = list || [];
+  const box = $('disp-list'), head = $('disp-head');
   box.replaceChildren();
-  for (const d of list || []) {
-    const row = el('div', 'disp-row'), label = el('span', '', d.printer);
-    label.append(el('small', '', 'token ' + d.id + '…'));
+  head.replaceChildren();
+  // Summary line, with one button to bring every outdated display up to date.
+  const online = list.filter(d => d.online).length;
+  const ready = list.filter(d => d.online && d.outdated && !d.updating);
+  const busy = list.filter(d => d.updating).length;
+  if (list.length) {
+    head.append(el('span', '', online + ' of ' + list.length + ' connected' +
+      (busy ? ' · ' + busy + ' updating' : '')));
+    if (ready.length) {
+      const all = el('button', 'plain', 'Update all (' + ready.length + ')');
+      all.type = 'button';
+      all.addEventListener('click', () => updateDisplays(null));
+      head.append(all);
+    }
+  }
+  for (const d of list) {
+    const row = el('div', 'disp-row'), who = el('span', 'who', d.printer);
+    who.append(el('small', '', 'token ' + d.id + '…'));
+    const meta = el('span', 'meta');
+    meta.append(el('span', 'dot2' + (d.online ? ' on' : '')),
+      d.seen == null ? 'Not connected since the server started'
+        : d.online ? 'Connected' : 'Last seen ' + ago(d.seen));
+    if (d.name || d.ip) {
+      meta.append(' · ');
+      if (d.ip) { const a = el('a', '', d.name || d.ip); a.href = 'http://' + d.ip; a.target = '_blank'; a.rel = 'noopener'; meta.append(a); }
+      else meta.append(d.name);
+    }
+    if (d.version) meta.append(' · ' + d.version);
+    else if (d.seen != null) meta.append(' · older firmware (update it from its own page)');
+    if (d.updating === 'now') meta.append(' · ', el('span', 'warn', 'updating…'));
+    else if (d.updating === 'waiting') meta.append(' · ', el('span', 'warn', 'waiting its turn'));
+    else if (d.failed) meta.append(' · ', el('span', 'bad', "didn't update"));
+    else if (d.outdated) meta.append(' · ', el('span', 'warn', d.latest + ' available'));
+    who.append(meta);
+    const acts = el('span', 'acts');
+    if (d.online && d.outdated && !d.updating) {
+      const up = el('button', 'plain', 'Update');
+      up.type = 'button';
+      up.addEventListener('click', () => updateDisplays([d.id]));
+      acts.append(up);
+    }
     const btn = el('button', 'plain', 'Revoke');
     btn.type = 'button';
     btn.addEventListener('click', async () => {
@@ -981,13 +1048,21 @@ function renderDisplays(list) {
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: d.id }) });
       if (r.ok) renderDisplays((await r.json()).displays);
     });
-    row.append(label, btn);
+    acts.append(btn);
+    row.append(who, acts);
     box.append(row);
   }
-  const sel = $('disp-printer');
+  const sel = $('disp-printer'), keep = sel.value;
   sel.replaceChildren(...[...cards.keys()].map(n => { const o = el('option', '', n); o.value = n; return o; }));
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
   $('disp-add').disabled = !cards.size;
 }
+// While Settings is open, keep the list current: who is connected, how updates are going.
+setInterval(async () => {
+  if (!dlg.open || document.hidden) return;
+  try { renderDisplays((await (await fetch('api/displays', { cache: 'no-store' })).json()).displays); }
+  catch { /* keep what is shown */ }
+}, 5000);
 async function loadDisplays() {
   $('disp-token').hidden = true;
   try { renderDisplays((await (await fetch('api/displays', { cache: 'no-store' })).json()).displays); }

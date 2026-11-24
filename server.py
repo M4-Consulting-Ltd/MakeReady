@@ -1067,9 +1067,109 @@ def display_tokens():
     return tokens if isinstance(tokens, dict) else {}
 
 
+# What each display last told us about itself, and which ones have been asked to update.
+# Kept in memory only: every board reports again within seconds of a restart.
+DISPLAY_SEEN = {}            # token id -> {"at", "version", "screen", "name", "ip"}
+DISPLAY_UPDATES = {}         # token id -> {"from": version when asked, "at": start time or None}
+DISPLAY_ONLINE = 45          # seconds since its last call for a display to count as connected
+UPDATE_AT_ONCE = 3           # boards told to update at the same time; the rest wait their turn
+UPDATE_TIMEOUT = 600         # give up on a board that hasn't come back on a new version
+FIRMWARE_URL = "https://github.com/M4-Consulting-Ltd/MakeReady/releases/download/display-latest"
+FIRMWARE_FILES = {"ESP32-2432S028": "", "ESP32-2432S028-7789": "-st7789",
+                  "ESP32-2432S028-9342": "-ili9342"}
+FIRMWARE = {}                # screen type -> {"at", "version"}
+FIRMWARE_TTL = 1800
+
+
+def latest_firmware(screen):
+    """Newest published firmware version for a screen type, or "" if it can't be found out."""
+    if screen not in FIRMWARE_FILES:
+        return ""
+    now = time.time()
+    with LOCK:
+        got = FIRMWARE.get(screen)
+        if got and now - got["at"] < (FIRMWARE_TTL if got["version"] else 300):
+            return got["version"]
+        FIRMWARE[screen] = {"at": now, "version": (got or {}).get("version", "")}   # one fetch at a time
+    version = ""
+    try:
+        url = "%s/printer-display%s.manifest.json" % (FIRMWARE_URL, FIRMWARE_FILES[screen])
+        with urllib.request.urlopen(url, timeout=8) as r:
+            version = str(json.loads(r.read(65536)).get("version") or "")[:40]
+    except Exception:
+        pass
+    with LOCK:
+        FIRMWARE[screen] = {"at": time.time(), "version": version}
+    return version
+
+
+def _clean(value, limit=40):
+    """Text a board sent about itself: printable ASCII only, cut short."""
+    return "".join(c for c in str(value or "") if 32 <= ord(c) < 127)[:limit]
+
+
+def display_seen(ident, headers, address):
+    """Note a display's call. Returns True if it should update its firmware now."""
+    now = time.time()
+    info = {"at": now, "version": _clean(headers.get("X-Display-Version")),
+            "screen": _clean(headers.get("X-Display-Screen")),
+            "name": _clean(headers.get("X-Display-Name")),
+            "ip": _clean(headers.get("X-Display-Ip")) or _clean(address)}
+    with LOCK:
+        DISPLAY_SEEN[ident] = info
+        job = DISPLAY_UPDATES.get(ident)
+        if not job:
+            return False
+        if info["version"] != job["from"]:                  # it came back on new firmware
+            del DISPLAY_UPDATES[ident]
+            return False
+        if job["at"] is None:                               # waiting its turn
+            busy = sum(1 for j in DISPLAY_UPDATES.values()
+                       if j["at"] is not None and now - j["at"] < UPDATE_TIMEOUT)
+            if busy >= UPDATE_AT_ONCE:
+                return False
+            job["at"] = now
+        elif now - job["at"] > UPDATE_TIMEOUT:              # never changed version: give up
+            del DISPLAY_UPDATES[ident]
+            DISPLAY_SEEN[ident]["failed"] = True
+            return False
+        return True
+
+
 def display_list():
-    return [{"id": h[:8], "printer": name} for h, name in sorted(display_tokens().items(),
-                                                              key=lambda x: x[1])]
+    now = time.time()
+    out = []
+    for h, name in sorted(display_tokens().items(), key=lambda x: x[1]):
+        ident = h[:8]
+        with LOCK:
+            seen = dict(DISPLAY_SEEN.get(ident) or {})
+            job = dict(DISPLAY_UPDATES.get(ident) or {})
+        latest = latest_firmware(seen.get("screen", "")) if seen else ""
+        version = seen.get("version", "")
+        out.append({
+            "id": ident, "printer": name,
+            "seen": round(now - seen["at"]) if seen else None,     # seconds ago, None = never
+            "online": bool(seen) and now - seen["at"] < DISPLAY_ONLINE,
+            "version": version, "screen": seen.get("screen", ""),
+            "name": seen.get("name", ""), "ip": seen.get("ip", ""),
+            "latest": latest,
+            # can it be told to update? Only firmware that reports its version obeys.
+            "outdated": bool(version and latest and version != latest),
+            "updating": "waiting" if job and job.get("at") is None else "now" if job else "",
+            "failed": bool(seen.get("failed"))})
+    return out
+
+
+def display_update(idents):
+    """Ask these displays (token ids) to update. Returns how many were asked."""
+    asked = 0
+    for d in display_list():
+        if d["id"] in idents and d["online"] and d["outdated"] and not d["updating"]:
+            with LOCK:
+                DISPLAY_UPDATES[d["id"]] = {"from": d["version"], "at": None}
+                DISPLAY_SEEN.get(d["id"], {}).pop("failed", None)
+            asked += 1
+    return asked
 
 
 def display_create(printer):
@@ -1085,6 +1185,8 @@ def display_create(printer):
 def display_revoke(ident):
     with LOCK:
         tokens = {h: n for h, n in display_tokens().items() if h[:8] != ident}
+        DISPLAY_SEEN.pop(ident, None)
+        DISPLAY_UPDATES.pop(ident, None)
         CFG["DISPLAY_TOKENS"] = tokens
         save_config()
 
@@ -1100,6 +1202,12 @@ def display_printer(headers):
         if hmac.compare_digest(h, want):
             return name
     return None
+
+
+def display_ident(headers):
+    """The token id (as shown in Settings) for a request already known to be a display's."""
+    auth = str(headers.get("Authorization") or "")
+    return _token_hash(auth[7:].strip())[:8]
 
 
 def printers_cached():
@@ -1314,7 +1422,11 @@ class Handler(BaseHTTPRequestHandler):
             if name is None:
                 self.send(401, b'{"error":"Unknown display token"}')
             else:
-                self.send(200, json.dumps(display_summary(name)).encode())
+                out = display_summary(name)
+                # Tell the server's list this display is alive; pass on a request to update.
+                if display_seen(display_ident(self.headers), self.headers, self.client_address[0]):
+                    out["update"] = True
+                self.send(200, json.dumps(out).encode())
         elif not self.authed():
             self.send(401, b'{"error":"Log in to use this page.","login":true}')
         elif path == "/api/displays":
@@ -1414,7 +1526,13 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(raw or b"{}")
             except ValueError:
                 data = {}
-            if len(parts) == 4 and parts[3] == "revoke":
+            if len(parts) == 4 and parts[3] == "update":
+                want = data.get("ids")
+                want = {str(i) for i in want} if isinstance(want, list) \
+                    else {d["id"] for d in display_list()}          # no list = every display
+                asked = display_update(want)
+                self.send(200, json.dumps({"asked": asked, "displays": display_list()}).encode())
+            elif len(parts) == 4 and parts[3] == "revoke":
                 display_revoke(str(data.get("id") or ""))
                 self.send(200, json.dumps({"displays": display_list()}).encode())
             elif len(parts) == 3 and str(data.get("printer") or "").strip():

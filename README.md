@@ -285,6 +285,21 @@ Each board has its own settings page on your network, where you can also:
 Full instructions, troubleshooting and how to build the firmware yourself are in
 [display/README.md](display/README.md).
 
+### Keeping track of many displays
+
+**Settings → Printer displays** lists every display with a token: whether it is
+connected (each one calls the server every 10 seconds), when it was last seen, its name
+and address (a link to its own settings page), and its firmware version. When a newer
+firmware is published the row says so, with an **Update** button; **Update all** does
+every outdated display, three at a time so the whole farm isn't dark at once. The server
+doesn't send the firmware: it asks the display, in its next reply, to fetch and install
+the latest version itself, so displays still need to reach github.com.
+
+Displays on firmware from before this feature show as connected, without a version, and
+have to be updated once from their own page (or by themselves, if automatic updates are
+on). The list is kept in memory, so it starts empty when the server restarts and fills
+again within seconds.
+
 ### What a display can do
 
 Each token is tied to one printer. With it, a board can read that printer's summary and
