@@ -27,7 +27,9 @@ building any. Open it on a phone, a tablet or a wall-mounted display.
 For each printer it shows:
 
 - its state, progress, time left and finish time;
-- a **Set Ready** button when the plate is waiting to be cleared;
+- a **Set Ready** button when the plate is waiting to be cleared, and **Not ready** to
+  take it back;
+- when Watchtower is sending it a job, with progress;
 - **pause**, **stop** and **resume** buttons, each with a confirmation;
 - a camera snapshot (optional);
 - the filament loaded in its slots (optional).
@@ -36,7 +38,8 @@ Under the printers, a **Waiting jobs** list (optional) shows what each queued jo
 and which printer could run it, or what would have to be loaded where.
 
 It can also drive a small **touch screen on the front of each printer**, showing that
-printer's progress and what to load next, with its own Set Ready button. See
+printer's progress and what to load next, with its own Set Ready button. The page lists
+the displays, shows which are connected and updates their firmware. See
 [Printer displays](#printer-displays).
 
 ![The page showing six printers with camera pictures, loaded filament and buttons, above a list of waiting jobs](docs/screenshot.png)
@@ -233,13 +236,20 @@ standing at the machine can see what it needs without opening the page.
 
 - **While printing:** estimated time left and estimated completion time in large type,
   and a bar that fills as the print goes on.
+- **When paused:** the time left, still large, and a **Resume print** button.
 - **When the print is done:** either **Set Ready picks up:** with the next job, or
   **Load for next job:** with the filament to fetch, by colour name and weight. A warning
   appears if a loaded spool has less than the job needs.
 - **Set Ready:** a button on the screen, held for a second so a brush against it does
-  nothing.
-- **A queue page:** swipe sideways, or tap the top bar, for the jobs waiting for that
-  printer, in Watchtower's order.
+  nothing. Once the printer is ready the same button becomes **Not ready**, to take it
+  back until a job is sent.
+- **Receiving a job:** the job's name and a bar that fills as Watchtower sends it.
+- **A job list:** swipe sideways, or tap the top bar, for the waiting jobs that could
+  come to that printer, in Watchtower's order, each marked queued, assigned here or
+  soft-assigned to another printer. Tap a job to see the filaments it needs and which
+  of them this printer has loaded.
+- **Dimming:** half brightness after five minutes without a touch; a touch brings it
+  back.
 
 ### The hardware
 
@@ -285,6 +295,21 @@ Each board has its own settings page on your network, where you can also:
 Full instructions, troubleshooting and how to build the firmware yourself are in
 [display/README.md](display/README.md).
 
+### Keeping track of many displays
+
+**Settings → Printer displays** lists every display with a token: whether it is
+connected (each one calls the server every 10 seconds), when it was last seen, its name
+and address (a link to its own settings page), and its firmware version. When a newer
+firmware is published the row says so, with an **Update** button; **Update all** does
+every outdated display, three at a time so the whole farm isn't dark at once. The server
+doesn't send the firmware: it asks the display, in its next reply, to fetch and install
+the latest version itself, so displays still need to reach github.com.
+
+Displays on firmware from before this feature show as connected, without a version, and
+have to be updated once from their own page (or by themselves, if automatic updates are
+on). The list is kept in memory, so it starts empty when the server restarts and fills
+again within seconds.
+
 ### What a display can do
 
 Each token is tied to one printer. With it, a board can read that printer's summary and
@@ -296,8 +321,10 @@ token or firmware.
 ### Status
 
 Running on real two-socket boards with the ST7789 screen: flashing, on-screen setup,
-the printer screens and live data all work. The touch button, the swipe to the queue
-page and the over-Wi-Fi update have been built but not yet confirmed on hardware.
+the printer screens, live data and the "receiving a job" bar all work, and the boards
+have been updated over Wi-Fi. Built but not yet confirmed on hardware: the touch pages
+(job list, opening a job), Not ready, Resume, dimming, renaming a board, and updating
+displays from the MakeReady page.
 
 ## Running it permanently
 
@@ -426,6 +453,9 @@ plate is waiting and the Set Ready button is live.
   on a printer in an error state, where Watchtower is expected to reject it.
 - **Filament matching is an estimate**, as described
   [above](#loaded-filament-and-waiting-jobs).
+- **Jobs being sent** are read from a part of Watchtower's queue reply that has only
+  been seen on one install; the job's name may be missing.
+- **Not ready** uses the message Watchtower's own page sends, not a documented command.
 - **Snapshots, not video.**
 
 ## Licence
