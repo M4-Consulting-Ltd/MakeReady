@@ -78,7 +78,7 @@ CFG = load_config()
 LOCK = threading.Lock()
 SAVED_KEYS = ("WATCHTOWER_URL", "WATCHTOWER_API_KEY", "WATCHTOWER_CA", "WATCHTOWER_INSECURE",
               "WATCHTOWER_USERNAME", "WATCHTOWER_PASSWORD", "PAGE_PASSWORD_HASH",
-              "SESSION_SECRET", "DISPLAY_TOKENS")
+              "SESSION_SECRET", "DISPLAY_TOKENS", "DISPLAY_SETTINGS")
 
 
 def truthy(v):
@@ -1137,6 +1137,35 @@ def display_seen(ident, headers, address):
         return True
 
 
+# Settings that apply to every display, sent to each one with its printer's summary.
+DISPLAY_DEFAULTS = {"dim": True, "dim_level": 50}     # dim after 5 minutes idle, to this %
+
+
+def display_settings():
+    saved = CFG.get("DISPLAY_SETTINGS")
+    out = dict(DISPLAY_DEFAULTS)
+    if isinstance(saved, dict):
+        out["dim"] = bool(saved.get("dim", out["dim"]))
+        try:
+            out["dim_level"] = max(5, min(90, int(saved.get("dim_level", out["dim_level"]))))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def display_settings_save(data):
+    """Store what the page sent (unknown or bad values keep what was there)."""
+    now = display_settings()
+    if isinstance(data.get("dim"), bool):
+        now["dim"] = data["dim"]
+    if isinstance(data.get("dim_level"), (int, float)) and not isinstance(data.get("dim_level"), bool):
+        now["dim_level"] = max(5, min(90, int(data["dim_level"])))
+    with LOCK:
+        CFG["DISPLAY_SETTINGS"] = now
+        save_config()
+    return now
+
+
 def display_list():
     now = time.time()
     out = []
@@ -1734,6 +1763,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(401, b'{"error":"Unknown display token"}')
             else:
                 out = display_summary(name)
+                # The farm-wide display settings: how far to dim when idle, -1 for never.
+                conf = display_settings()
+                out["dim"] = conf["dim_level"] if conf["dim"] else -1
                 # Tell the server's list this display is alive; pass on a request to update.
                 if display_seen(display_ident(self.headers), self.headers, self.client_address[0]):
                     out["update"] = True
@@ -1741,7 +1773,8 @@ class Handler(BaseHTTPRequestHandler):
         elif not self.authed():
             self.send(401, b'{"error":"Log in to use this page.","login":true}')
         elif path == "/api/displays":
-            self.send(200, json.dumps({"displays": display_list()}).encode())
+            self.send(200, json.dumps({"displays": display_list(),
+                                       "settings": display_settings()}).encode())
         elif path == "/api/config":
             self.send(200, json.dumps(public_config()).encode())
         elif path == "/api/queue":
@@ -1837,7 +1870,9 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(raw or b"{}")
             except ValueError:
                 data = {}
-            if len(parts) == 4 and parts[3] == "update":
+            if len(parts) == 4 and parts[3] == "settings":
+                self.send(200, json.dumps({"settings": display_settings_save(data)}).encode())
+            elif len(parts) == 4 and parts[3] == "update":
                 want = data.get("ids")
                 want = {str(i) for i in want} if isinstance(want, list) \
                     else {d["id"] for d in display_list()}          # no list = every display

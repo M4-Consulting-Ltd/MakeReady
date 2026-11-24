@@ -122,6 +122,14 @@
   .disp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
                font-size: 13px; color: var(--muted); margin-bottom: 4px; }
   .disp-head:empty { display: none; }
+  .disp-all { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; font-size: 14px; }
+  .disp-all b { display: block; margin-bottom: 8px; }
+  .disp-all label { font-weight: 400; margin-bottom: 8px; }
+  .disp-all label.check { display: flex; align-items: center; gap: 8px; }
+  .disp-all .disp-level { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .disp-all .disp-level input { width: 72px; font: inherit; padding: 6px 8px; color: var(--text);
+                                background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+  .disp-all .disp-level span { color: var(--muted); }
   dialog legend { font-size: 14px; font-weight: 600; padding: 0 4px; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .btns { display: flex; gap: 8px; margin-top: auto; }   /* buttons line up along the row */
@@ -254,6 +262,14 @@
         summary, press Set Ready or take it back, and resume a paused print, nothing else.
         The list shows which displays are connected and lets you update their firmware
         from here, a few at a time.</small>
+    <div class="disp-all">
+        <b>Settings for all displays</b>
+        <label class="check"><input type="checkbox" id="disp-dim"> Dim the screens after 5 minutes without a touch</label>
+        <label class="disp-level">Dim to
+          <input type="number" id="disp-dim-level" min="5" max="90" step="5" inputmode="numeric"> %
+          <span>of each display's own brightness</span></label>
+        <small id="disp-all-note">Applies to every display within about 10 seconds.</small>
+      </div>
     </fieldset>
     <fieldset>
       <legend>Page password</legend>
@@ -1089,10 +1105,34 @@ setInterval(async () => {
   try { renderDisplays((await (await fetch('api/displays', { cache: 'no-store' })).json()).displays); }
   catch { /* keep what is shown */ }
 }, 5000);
+// Settings every display shares. Saved as soon as they are changed.
+function showDisplaySettings(s) {
+  if (!s) return;
+  $('disp-dim').checked = !!s.dim;
+  $('disp-dim-level').value = s.dim_level;
+  $('disp-dim-level').disabled = !s.dim;
+}
+async function saveDisplaySettings() {
+  const level = Math.max(5, Math.min(90, Math.round(+$('disp-dim-level').value) || 50));
+  const note = $('disp-all-note');
+  try {
+    const r = await fetch('api/displays/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dim: $('disp-dim').checked, dim_level: level }) });
+    if (!r.ok) throw new Error();
+    showDisplaySettings((await r.json()).settings);
+    note.textContent = 'Saved. Applies to every display within about 10 seconds.';
+  } catch { note.textContent = "Couldn't save the display settings."; }
+}
+$('disp-dim').addEventListener('change', saveDisplaySettings);
+$('disp-dim-level').addEventListener('change', saveDisplaySettings);
 async function loadDisplays() {
   $('disp-token').hidden = true;
-  try { renderDisplays((await (await fetch('api/displays', { cache: 'no-store' })).json()).displays); }
-  catch { renderDisplays([]); }
+  $('disp-all-note').textContent = 'Applies to every display within about 10 seconds.';
+  try {
+    const out = await (await fetch('api/displays', { cache: 'no-store' })).json();
+    renderDisplays(out.displays);
+    showDisplaySettings(out.settings);
+  } catch { renderDisplays([]); }
 }
 document.getElementById('disp-add').addEventListener('click', async () => {
   const r = await fetch('api/displays', { method: 'POST', headers: { 'Content-Type': 'application/json' },

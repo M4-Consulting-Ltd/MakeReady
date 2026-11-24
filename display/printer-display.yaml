@@ -322,6 +322,7 @@ globals:
   # Dimming: half brightness after five minutes without a touch; a touch brings it back.
   - {id: g_bl,      type: float,      initial_value: "1.0"}   # brightness chosen on the settings page
   - {id: g_dim,     type: bool,       initial_value: "false"}
+  - {id: g_dim_to,  type: int,        initial_value: "50"}    # % of the chosen brightness when dimmed; -1 = never dim (set on the MakeReady page)
   - {id: g_wake,    type: bool,       initial_value: "false"} # this touch only woke the screen
   - {id: g_idle_at, type: uint32_t,   initial_value: "0"}     # when the screen was last touched
 
@@ -406,6 +407,15 @@ script:
                           id(g_undo)   = root["undo"]   | false;
                           id(g_resume) = root["resume"] | false;
                           id(g_push)   = root["update"] | false;
+                          // Farm-wide dimming, set on the MakeReady page. A server from
+                          // before that setting leaves the built-in 50%.
+                          int dim_to = root["dim"] | 50;
+                          if (dim_to > 100) dim_to = 100;
+                          if (dim_to != id(g_dim_to)) {
+                            id(g_dim_to) = dim_to;
+                            if (dim_to < 0) id(g_dim) = false;              // switched off: full brightness
+                            id(backlight_raw).set_level(id(g_dim) ? id(g_bl) * dim_to / 100.0f : id(g_bl));
+                          }
                           int n = 0;
                           JsonArray fils = root["fil"];
                           for (JsonObject f : fils) {
@@ -495,9 +505,9 @@ interval:
   - interval: 1s
     then:
       - lambda: |-
-          if (!id(g_dim) && millis() - id(g_idle_at) > 5 * 60 * 1000) {
+          if (!id(g_dim) && id(g_dim_to) >= 0 && millis() - id(g_idle_at) > 5 * 60 * 1000) {
             id(g_dim) = true;
-            id(backlight_raw).set_level(id(g_bl) * 0.5f);
+            id(backlight_raw).set_level(id(g_bl) * id(g_dim_to) / 100.0f);
           }
           std::string n = board_name::tidy(id(cfg_name).state);
           if (n.empty()) n = App.get_name().c_str();
@@ -530,7 +540,7 @@ output:
     write_action:
       - lambda: |-
           id(g_bl) = state;
-          id(backlight_raw).set_level(id(g_dim) ? state * 0.5f : state);
+          id(backlight_raw).set_level(id(g_dim) ? state * id(g_dim_to) / 100.0f : state);
 
   # The board's RGB status light (lit when the pin is low). Held off so it doesn't glow.
   - {platform: gpio, pin: {number: GPIO4, inverted: true}, id: led_red}
