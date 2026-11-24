@@ -336,11 +336,12 @@ token or firmware.
 
 ### Status
 
-Running on real two-socket boards with the ST7789 screen: flashing, on-screen setup,
-the printer screens, live data and the "receiving a job" bar all work, and the boards
-have been updated over Wi-Fi. Built but not yet confirmed on hardware: the touch pages
-(job list, opening a job), Not ready, Resume, dimming, renaming a board, and updating
-displays from the MakeReady page.
+Running on real boards: two-socket ESP32-2432S028 boards with the ST7789 screen, and an
+LCDWiki ESP32-32E board with the ILI9341 screen. Flashing, on-screen setup, the printer
+screens, live data and the "receiving a job" bar all work, the boards have been updated
+over Wi-Fi, and touch works on the ESP32-32E board. Built but not yet confirmed one by
+one on hardware: Not ready, Resume, dimming, renaming a board, and updating displays
+from the MakeReady page.
 
 ## Running it permanently
 

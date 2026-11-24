@@ -7,8 +7,9 @@ filament to load for the next waiting job, and a **Set Ready** button.
 
 *Mock-up of the layout with sample data.*
 
-**Status:** running on a real two-socket board (ST7789 screen): flashing, both setup
-steps and the printer screen work. The touch button has not been tried yet.
+**Status:** running on real boards (two-socket ESP32-2432S028 with the ST7789 screen,
+and an LCDWiki ESP32-32E with the ILI9341 screen): flashing, both setup steps and the
+printer screens work, and touch works on the ESP32-32E board.
 
 ## What you need
 
