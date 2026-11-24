@@ -50,8 +50,15 @@
   .model { color: var(--muted); font-size: 13px; }
   .model:empty, .eta:empty, .msg:empty { display: none; }
   .status { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-  .eta { font-size: 13px; color: var(--muted); margin-top: -6px;
-         font-variant-numeric: tabular-nums; }
+  /* Time left and finish time, large enough to read from across the room. */
+  .eta { display: flex; gap: 8px 28px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+  .eta div { min-width: 0; }
+  .eta small { display: block; font-size: 12px; color: var(--muted); }
+  .eta b { display: block; font-size: 28px; font-weight: 600; line-height: 1.15; }
+  /* While printing, the main button is a progress bar that fills as the print goes on. */
+  .printing .main { opacity: 1; border-color: var(--go); color: var(--text);
+                    background: linear-gradient(90deg, color-mix(in srgb, var(--go) 45%, transparent) var(--pct, 0%),
+                                                transparent 0); }
   .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); flex: none; }
   .printing .dot { animation: breathe 2.4s ease-in-out infinite; }
   .paused .dot { animation: breathe .5s steps(2) infinite; }
@@ -374,17 +381,16 @@ function minutesLeft(p) {
   return null;
 }
 
-// "1h 23m left · done 14:35" (with the weekday if it finishes on another day)
-function etaText(p, withFinish) {
+// Time left ("1h 23m") and when that is ("14:35", with the weekday if it is another day).
+function etaParts(p) {
   const m = minutesLeft(p);
-  if (m === null) return '';
-  const mins = Math.round(m), h = Math.floor(mins / 60);
-  const left = mins < 1 ? 'Under a minute left' : (h ? h + 'h ' : '') + (mins % 60) + 'm left';
-  if (!withFinish) return left;        // a paused job has no meaningful finish time
+  if (m === null) return null;
+  const mins = Math.round(m), hrs = Math.floor(mins / 60);
   const end = new Date(Date.now() + m * 60000);
   const opts = { hour: 'numeric', minute: '2-digit' };
   if (end.toDateString() !== new Date().toDateString()) opts.weekday = 'short';
-  return left + ' · done ' + end.toLocaleTimeString([], opts);
+  return { left: mins < 1 ? 'Under 1m' : (hrs ? hrs + 'h ' : '') + (mins % 60) + 'm',
+           done: end.toLocaleTimeString([], opts) };
 }
 
 // Accept {data:{printers:[...]}}, {data:[...]}, {printers:[...]} or a bare array.
@@ -461,14 +467,23 @@ function render(printers) {
     c.state = state;
     c.el.className = 'card ' + state + (sending ? ' sending' : '');
     c.el.querySelector('.model').textContent = p.model || '';
-    let label = LABEL[state][0];
-    if (state === 'printing' && typeof p.progress === 'number')
-      label += ' ' + Math.round(p.progress) + '%';        // Watchtower reports 0-100
-    c.el.querySelector('.label').textContent = label;
-    c.el.querySelector('.eta').textContent =
-      state === 'printing' ? etaText(p, true) : state === 'paused' ? etaText(p, false) : '';
+    c.el.querySelector('.label').textContent = LABEL[state][0];
+    // Large time left and finish time, as on the printer displays. A paused job has no
+    // meaningful finish time, so it shows only what is left.
+    const eta = c.el.querySelector('.eta');
+    const t = state === 'printing' || state === 'paused' ? etaParts(p) : null;
+    eta.replaceChildren();
+    if (t) {
+      const cell = (head, value) => { const d = el('div'); d.append(el('small', '', head), el('b', '', value)); return d; };
+      eta.append(cell(state === 'paused' ? 'Time left once resumed' : 'Estimated time left', t.left));
+      if (state === 'printing') eta.append(cell('Estimated completion', t.done));
+    }
     const btn = c.el.querySelector('.main');
-    const text = armed ? 'Tap again to resume' : LABEL[state][1];
+    const pct = state === 'printing' && typeof p.progress === 'number'
+      ? Math.max(0, Math.min(100, Math.round(p.progress))) : null;   // Watchtower reports 0-100
+    btn.style.setProperty('--pct', (pct || 0) + '%');
+    const text = armed ? 'Tap again to resume'
+      : pct !== null ? 'Printing ' + pct + '%' : LABEL[state][1];
     c.el.classList.toggle('armed', armed);
     btn.textContent = sending ? 'Sending…' : text;
     btn.setAttribute('aria-disabled', !(state === 'plate' || state === 'paused') || sending);
