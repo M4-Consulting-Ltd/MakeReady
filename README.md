@@ -1,4 +1,4 @@
-# MakeReady
+# <img src="docs/icon.svg" alt="" width="32" height="32" align="top"> MakeReady
 
 Gets each printer in a [Watchtower](https://watchtower3d.com) 3D-printer farm **ready
 for its next job**, so Watchtower can send it one.

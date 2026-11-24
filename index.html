@@ -5,6 +5,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MakeReady</title>
+<!-- The icon: a nozzle above a clear plate, with a tick. Also docs/icon.svg. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%231b1e24%22/%3E%3Cpath d=%22M23 9h18v9l-6 8h-6l-6-8z%22 fill=%22%23eceef2%22/%3E%3Cpath d=%22M20 38l8 8 16-17%22 fill=%22none%22 stroke=%22%2335b765%22 stroke-width=%226.5%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3Crect x=%2210%22 y=%2250%22 width=%2244%22 height=%226%22 rx=%223%22 fill=%22%23eceef2%22/%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #f4f5f7; --card: #fff; --text: #16181d; --muted: #667085; --line: #dde1e7;
@@ -21,7 +23,8 @@
   /* Row 1: title + Settings. Row 2: counts + last update. Same on phone and desktop. */
   header { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 12px;
            padding: 16px; max-width: var(--page); margin: 0 auto; }
-  h1 { font-size: 20px; margin: 0; }
+  h1 { font-size: 20px; margin: 0; display: flex; align-items: center; gap: 10px; }
+  h1 .logo { width: 28px; height: 28px; flex: none; }
   #open-settings { grid-row: 1; grid-column: 2; justify-self: end; }
   #summary { grid-row: 2; grid-column: 1; color: var(--muted); font-size: 14px; }
   #updated { grid-row: 2; grid-column: 2; color: var(--muted); font-size: 13px;
@@ -184,7 +187,7 @@
 </head>
 <body>
 <header>
-  <h1>MakeReady</h1>
+  <h1><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#1b1e24"/><path d="M23 9h18v9l-6 8h-6l-6-8z" fill="#eceef2"/><path d="M20 38l8 8 16-17" fill="none" stroke="#35b765" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="10" y="50" width="44" height="6" rx="3" fill="#eceef2"/></svg>MakeReady</h1>
   <span id="summary"></span>
   <span id="updated"></span>
   <button type="button" id="open-settings" class="plain">Settings</button>
