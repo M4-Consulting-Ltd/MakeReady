@@ -223,6 +223,12 @@ The cards arrange themselves from the screen size and the number of printers:
 
 Light and dark themes follow the device setting.
 
+### On a phone or tablet's home screen
+
+Add the page to the home screen to open it like an app, full screen, with its own icon:
+in Safari use **Share → Add to Home Screen**; in Chrome use the menu's **Add to Home
+screen** (or **Install app**). Handy for a tablet on the wall.
+
 ## Printer displays
 
 A small touch screen for the front of each printer, one per printer, so whoever is
