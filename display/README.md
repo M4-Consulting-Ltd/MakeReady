@@ -142,9 +142,11 @@ only making one.
 
 ### Dimming
 
-After five minutes without a touch the screen drops to half the brightness set on the
-board's settings page. Touch it anywhere to bring it back; that first touch only wakes
-the screen and doesn't press anything.
+After five minutes without a touch the screen dims to a share of the brightness set on
+the board's settings page: half, unless you choose otherwise. Whether displays dim, and
+how far, is set once for all of them on the MakeReady page, under **Settings → Printer
+displays → Settings for all displays**. Touch the screen anywhere to bring it back; that
+first touch only wakes the screen and doesn't press anything.
 
 ### The queue page
 

@@ -316,6 +316,16 @@ have to be updated once from their own page (or by themselves, if automatic upda
 on). The list is kept in memory, so it starts empty when the server restarts and fills
 again within seconds.
 
+### Settings for all displays
+
+Under the list, **Settings for all displays** holds the choices every display shares.
+They are sent to each display with its next update, so a change reaches the whole farm
+within about 10 seconds, and they are kept in `config.json`.
+
+- **Dim the screens after 5 minutes without a touch**, and how far: a percentage of the
+  brightness set on each display's own page (5 to 90). Untick it to keep the screens at
+  full brightness.
+
 ### What a display can do
 
 Each token is tied to one printer. With it, a board can read that printer's summary and
