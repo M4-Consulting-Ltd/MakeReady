@@ -130,6 +130,8 @@ only making one.
   - An amber "Low:" line when the spool has less than the job needs.
 - **Hold: Set Ready:** appears when the plate is waiting to be cleared. Hold it for a
   second; it turns brighter while held, then sends. A brush against the screen does nothing.
+- **Hold: Resume print:** appears when the print is paused. Hold it for a second to
+  carry on. Check the printer first: it pauses for a reason, such as a filament runout.
 - **Hold: Not ready:** an outlined button on a ready printer, until a job is sent to it.
   Hold it for a second to take a Set Ready back (needs the Watchtower login in the
   MakeReady page's Settings).
@@ -199,6 +201,6 @@ opens its address can change the server or token. The token is never shown back.
 ## What a display is allowed to do
 
 A token works for one printer only. With it, a display can read that printer's summary
-and send Set Ready, or take it back, for it. It can't see other printers, cameras or settings, and can't
+and send Set Ready (or take it back) and resume a paused print for it. It can't see other printers, cameras or settings, and can't
 pause or stop a print. Revoke a token under **Settings → Printer displays** if a screen
 is lost or replaced.
