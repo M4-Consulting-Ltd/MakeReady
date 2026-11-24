@@ -1153,6 +1153,7 @@ def display_summary(name):
            "job": "", "fil": [], "warn": "", "button": "",
            "pct": -1, "left": "", "done": "",             # progress bar and big times
            "bar": "",                                     # wording for the bar, when not printing
+           "resume": False,                               # offer "Resume" (paused)
            "undo": False,                                 # offer "Not ready" (takes Set Ready back)
            "queue": [], "more": 0,                        # second page: waiting jobs
            "jobs": [], "jmore": 0}                        # the same, longer, with each job's filaments
@@ -1244,6 +1245,7 @@ def display_summary(name):
                    bar="RECEIVING" if pct is None else "RECEIVING %d%%" % pct)
     # Ready with no job on its way yet: Set Ready can still be taken back.
     out["undo"] = bool(state == "ready" and not got and all(cam_creds()) and root_url())
+    out["resume"] = state == "paused"
     # While the printer is busy the display shows nothing about waiting jobs: what to load
     # only matters once the print is done. (The web page still shows it on busy printers.)
     # The display's font only has plain ASCII: swap the common extras, drop the rest.
@@ -1381,6 +1383,18 @@ class Handler(BaseHTTPRequestHandler):
                                         % urllib.parse.quote(name, safe=""), COMMANDS["set-ready"])
             with LOCK:
                 PRINTERS["at"] = 0                           # show the new state straight away
+            self.send(status, body or b"{}", retry_after=ra)
+            return
+        if parts == ["", "api", "display", "resume"]:
+            # From a printer display: resume a paused print, only on the token's own printer.
+            name = display_printer(self.headers)
+            if name is None:
+                self.send(401, b'{"error":"Unknown display token"}')
+                return
+            status, body, ra = upstream("POST", "/printers/%s/commands"
+                                        % urllib.parse.quote(name, safe=""), COMMANDS["resume"])
+            with LOCK:
+                PRINTERS["at"] = 0
             self.send(status, body or b"{}", retry_after=ra)
             return
         if parts == ["", "api", "display", "not-ready"]:
