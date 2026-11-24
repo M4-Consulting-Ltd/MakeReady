@@ -7,6 +7,7 @@
 const NAME = {
   server: 'SetReady page address (not Watchtower)',
   token: 'Display token',
+  link: 'MakeReady connection',
   name: 'Board name on the network',
   nameInUse: 'Network name in use',
   apply: 'Apply and restart',
@@ -114,7 +115,8 @@ function build() {
       <input type="password" id="token" placeholder="Leave blank to keep the current token" autocomplete="off">
       <small>From the MakeReady page: Settings → Printer displays → Create token.</small>
     </label>
-    <div class="btns"><button class="primary" id="save">Save and restart</button></div>
+    <div class="row" style="margin-top:14px"><b>Status</b><span class="val" id="link">–</span></div>
+    <div class="btns"><button class="primary" id="save">Save</button></div>
     <p class="note" id="save-note"></p>
   </section>
 
@@ -173,12 +175,12 @@ function build() {
     try {
       await post('text', NAME.server, 'set', { value: server });
       if (token) await post('text', NAME.token, 'set', { value: token });
-      await new Promise(r => setTimeout(r, 600));          // let the board store them
-      await post('button', NAME.apply, 'press');
-      dirty.clear(); $('token').value = '';
-      note.className = 'note good'; note.textContent = 'Saved. The board is restarting…';
+      // No restart needed: the board uses the new details straight away. The status
+      // line above shows how it got on.
+      dirty.delete('server'); dirty.delete('token'); $('token').value = '';
+      note.className = 'note good'; note.textContent = 'Saved. The board is connecting with the new details; see Status.';
     } catch { note.className = 'note bad'; note.textContent = "Couldn't reach the board."; }
-    setTimeout(() => { $('save').disabled = false; }, 8000);
+    setTimeout(() => { $('save').disabled = false; }, 1500);
   });
 
   let brightTimer;
@@ -256,6 +258,9 @@ function render() {
     if (v !== undefined && !dirty.has(id) && document.activeElement !== $(id)) $(id).value = v;
   };
   text(NAME.server, 'server');
+  const link = get('text_sensor', NAME.link).value;
+  $('link').textContent = link || '–';
+  $('link').style.color = /^Connected/.test(link || '') ? 'var(--green)' : '';
   text(NAME.name, 'name');
   const inUse = get('text_sensor', NAME.nameInUse).value;
   if (inUse) {

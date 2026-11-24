@@ -67,7 +67,8 @@ Put your phone back on your normal Wi-Fi and scan it to open the board's setting
 - **Display token:** on the MakeReady page, open **Settings → Printer displays**, choose
   the printer this board is for, press **Create token**, and paste it here.
 
-Then press **Save and restart**. The board restarts and shows the printer within a few
+Then press **Save**. The board connects straight away (the **Status** line on the page
+says how it got on) and shows the printer within a few
 seconds. The settings are kept on the board and survive power cuts.
 
 **If the MakeReady server moves.** You don't have to visit each board: on the MakeReady

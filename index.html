@@ -122,6 +122,7 @@
   .disp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
                font-size: 13px; color: var(--muted); margin-bottom: 4px; }
   .disp-head:empty { display: none; }
+  .disp-head .acts { display: flex; gap: 6px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
   .disp-all { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; font-size: 14px; }
   .disp-all b { display: block; margin-bottom: 8px; }
   .disp-all label { font-weight: 400; margin-bottom: 8px; }
@@ -1061,14 +1062,26 @@ function renderDisplays(list) {
   const ready = list.filter(d => d.online && d.outdated && !d.updating);
   const busy = list.filter(d => d.updating).length;
   if (list.length) {
+    // Say where the firmware stands even when there is nothing to do, so a missing
+    // Update button isn't a puzzle: it only appears for displays that are behind.
+    const latest = [...new Set(list.map(d => d.latest).filter(Boolean))];
+    const behind = list.filter(d => d.outdated).length;
     head.append(el('span', '', online + ' of ' + list.length + ' connected' +
-      (busy ? ' · ' + busy + ' updating' : '')));
+      (busy ? ' · ' + busy + ' updating' : '') +
+      (latest.length === 1 ? ' · latest firmware ' + latest[0] : '') +
+      (latest.length && !behind && !busy ? ' · all up to date' : '')));
+    const acts = el('span', 'acts');
+    const check = el('button', 'plain', 'Check for new firmware');
+    check.type = 'button';
+    check.addEventListener('click', async () => { check.disabled = true; check.textContent = 'Checking…'; await loadDisplays(true); });
+    acts.append(check);
     if (ready.length) {
       const all = el('button', 'plain', 'Update all (' + ready.length + ')');
       all.type = 'button';
       all.addEventListener('click', () => updateDisplays(null));
-      head.append(all);
+      acts.append(all);
     }
+    head.append(acts);
   }
   for (const d of list) {
     const row = el('div', 'disp-row'), who = el('span', 'who', d.printer);
@@ -1088,6 +1101,7 @@ function renderDisplays(list) {
     else if (d.updating === 'waiting') meta.append(' · ', el('span', 'warn', 'waiting its turn'));
     else if (d.failed) meta.append(' · ', el('span', 'bad', "didn't update"));
     else if (d.outdated) meta.append(' · ', el('span', 'warn', d.latest + ' available'));
+    else if (d.version && d.latest) meta.append(' · up to date');
     who.append(meta);
     const acts = el('span', 'acts');
     if (d.online && d.outdated && !d.updating) {
@@ -1162,11 +1176,14 @@ async function saveDisplaySettings() {
 }
 $('disp-dim').addEventListener('change', saveDisplaySettings);
 $('disp-dim-level').addEventListener('change', saveDisplaySettings);
-async function loadDisplays() {
-  $('disp-token').hidden = true;
-  $('disp-all-note').textContent = 'Applies to every display within about 10 seconds.';
+async function loadDisplays(keep) {
+  if (!keep) {
+    $('disp-token').hidden = true;
+    $('disp-all-note').textContent = 'Applies to every display within about 10 seconds.';
+  }
   try {
-    const out = await (await fetch('api/displays', { cache: 'no-store' })).json();
+    // fresh=1: have the server look for newer firmware now rather than use what it knew.
+    const out = await (await fetch('api/displays?fresh=1', { cache: 'no-store' })).json();
     renderDisplays(out.displays);
     showDisplaySettings(out.settings);
   } catch { renderDisplays([]); }

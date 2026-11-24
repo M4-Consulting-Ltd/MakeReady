@@ -282,7 +282,7 @@ No software to install and nothing to edit; every board runs the same firmware.
 3. **Create a token** for the printer under **Settings → Printer displays** on the
    MakeReady page.
 4. **Scan the second QR code** to open the board's settings page, enter the MakeReady
-   address and the token, and press **Save and restart**.
+   address and the token, and press **Save**.
 
 Each board has its own settings page on your network, where you can also:
 
