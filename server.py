@@ -1803,6 +1803,13 @@ class Handler(BaseHTTPRequestHandler):
         elif not self.authed():
             self.send(401, b'{"error":"Log in to use this page.","login":true}')
         elif path == "/api/displays":
+            # fresh=1 (Settings just opened, or "Check now"): look for new firmware again,
+            # but not more than twice a minute.
+            if "fresh=1" in self.path.partition("?")[2].split("&"):
+                with LOCK:
+                    for got in FIRMWARE.values():
+                        if time.time() - got["at"] > 30:
+                            got["at"] = 0
             self.send(200, json.dumps({"displays": display_list(),
                                        "settings": display_settings()}).encode())
         elif path == "/api/config":
