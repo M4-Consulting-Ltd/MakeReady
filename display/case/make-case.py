@@ -24,11 +24,10 @@ HOLE_D = 3.2                     # mounting holes
 HOLE_L, HOLE_W = 77.1, 41.6      # hole centres: along the long side, across the short side
 PCB_T = 1.4                      # thickness of the PCB alone
 USB_OFFSET = 25.0                # centre of the USB-C socket from a long edge (25 = central)
-# The lit picture, seen from the front with the USB end on the left. NOT YET MEASURED on
-# this board: these are the usual figures for a 2.8" panel, centred along the board.
-PICTURE_L, PICTURE_W = 57.6, 43.2   # size of the lit area
-PICTURE_FROM_USB_END = 14.2         # board edge at the USB end to the start of the picture
-PICTURE_FROM_EDGE = 3.4             # long edge of the board to the picture
+# The glass, seen from the front with the USB end on the left. It is as wide as the
+# board. NOT YET MEASURED on this board: the usual length for a 2.8" panel, centred.
+GLASS_L = 69.2                   # length of the glass
+GLASS_FROM_USB_END = 8.4         # board edge at the USB end to the edge of the glass
 
 # ---- The case ---------------------------------------------------------------------------
 FIT = 0.3                        # gap between board and wall, each side
@@ -37,9 +36,8 @@ FLOOR = 2.0                      # the flat back the tape sticks to
 POST_GAP = 0.6                   # air between the tallest back part and the floor
 POST_D = 7.0                     # posts the board sits on
 PILOT_D = 2.7                    # hole for an M3 screw to cut its own thread
-RIM = 0.2                        # air between the glass and the surround, so it can't press on the touch layer
-FRONT = 2.0                      # thickness of the surround
-WINDOW_GAP = 0.8                 # how far the window stands back from the picture, all round
+GLASS_GAP = 0.3                  # gap between the glass and the surround, at each end
+CAP = 2.0                        # thickness of the surround over the ends of the board
 HEAD_D, HEAD_SINK = 6.2, 1.0     # recess for the screw heads
 THROUGH_D = 3.4                  # clearance hole for an M3 screw
 BOSS_D = 6.0                     # the surround's feet on the PCB: small, to stay clear of the glass
@@ -51,7 +49,9 @@ CORNER = 3.0                     # outside corner radius
 POST_H = BACK_PARTS + POST_GAP                 # floor to the back of the PCB
 IN_L, IN_W = PCB_L + 2 * FIT, PCB_W + 2 * FIT
 OUT_L, OUT_W = IN_L + 2 * WALL, IN_W + 2 * WALL
-HEIGHT = FLOOR + POST_H + STACK + RIM          # the surround sits on top of this
+HEIGHT = FLOOR + POST_H + PCB_T                # shell walls stop level with the front of the PCB
+FRONT = STACK - PCB_T                          # the surround is as thick as the glass stands proud,
+                                               # so its face ends up level with the glass
 
 
 def rounded_box(length, width, height, radius):
@@ -89,32 +89,28 @@ def shell():
 
 
 def surround():
-    """The front frame, drawn face-down as it prints: outer face on z = 0, USB end at -x."""
-    plate = rounded_box(OUT_L, OUT_W, FRONT, CORNER)
-    # Window over the picture. From the front the USB end is on the left; this part is
-    # drawn face-down, which mirrors it across the long axis only, so x is unchanged.
-    cx = -PCB_L / 2 + PICTURE_FROM_USB_END + PICTURE_L / 2
-    cy = -(-PCB_W / 2 + PICTURE_FROM_EDGE + PICTURE_W / 2)
-    window = box(PICTURE_L + 2 * WINDOW_GAP, PICTURE_W + 2 * WINDOW_GAP, FRONT + 2).translate((cx, cy, -1))
-    # Chamfer the window on the outer face so the frame doesn't shadow the picture.
-    lip = m3.Manifold.batch_hull([
-        box(PICTURE_L + 2 * WINDOW_GAP + 2.4, PICTURE_W + 2 * WINDOW_GAP + 2.4, 0.01).translate((cx, cy, 0)),
-        box(PICTURE_L + 2 * WINDOW_GAP, PICTURE_W + 2 * WINDOW_GAP, 0.01).translate((cx, cy, 1.2))])
-    part = plate - window - lip
-    # Bosses that reach down past the glass to the PCB at the four holes, and clamp it.
-    boss_h = STACK - PCB_T + RIM
+    """The front frame, drawn face-down as it prints: outer face on z = 0, USB end at -x.
+
+    The glass comes up through the window and sits level with the outer face. Along the
+    long sides the frame is just the rim over the shell's walls; over the two ends of the
+    board it is a hollow cap standing on four feet at the mounting holes.
+    """
+    part = rounded_box(OUT_L, OUT_W, FRONT, CORNER)
+    # Hollow it out over the board, leaving the cap and the rim.
+    part -= box(IN_L, IN_W, FRONT).translate((0, 0, CAP))
+    # The window: the glass's length, and the full width between the rims.
+    cx = -PCB_L / 2 + GLASS_FROM_USB_END + GLASS_L / 2
+    part -= box(GLASS_L + 2 * GLASS_GAP, IN_W, FRONT + 2).translate((cx, 0, -1))
     for sx in (-1, 1):
         for sy in (-1, 1):
             x, y = sx * HOLE_L / 2, sy * HOLE_W / 2
-            part += m3.Manifold.cylinder(boss_h, BOSS_D / 2, BOSS_D / 2, 48).translate((x, y, FRONT))
-            part -= m3.Manifold.cylinder(FRONT + boss_h + 2, THROUGH_D / 2, THROUGH_D / 2, 32).translate((x, y, -1))
+            part += m3.Manifold.cylinder(FRONT - CAP, BOSS_D / 2, BOSS_D / 2, 48).translate((x, y, CAP))
+            part -= m3.Manifold.cylinder(FRONT + 2, THROUGH_D / 2, THROUGH_D / 2, 32).translate((x, y, -1))
             part -= m3.Manifold.cylinder(HEAD_SINK + 1, HEAD_D / 2, HEAD_D / 2, 32).translate((x, y, -1))
-    # The shell's USB slot is open to the top so the board can drop in. This tongue hangs
-    # from the surround into the slot and closes the part of it above the plug.
-    plug_top = FLOOR + POST_H - USB_SOCKET_H / 2 + USB_PLUG_H / 2
-    tongue = HEIGHT - (plug_top + 0.4)
-    if tongue > 0.6:
-        part += box(WALL, USB_W - 0.5, tongue).translate((-(IN_L / 2 + WALL / 2), -(PCB_W / 2 - USB_OFFSET), FRONT))
+    # A plug's body stands a little higher than the shell's wall: notch the rim over it.
+    over = FLOOR + POST_H - USB_SOCKET_H / 2 + USB_PLUG_H / 2 + 0.4 - HEIGHT
+    if over > 0:
+        part -= box(WALL + 2, USB_W, over + 1).translate((-(IN_L / 2 + WALL / 2), -(PCB_W / 2 - USB_OFFSET), FRONT - over))
     return part
 
 
