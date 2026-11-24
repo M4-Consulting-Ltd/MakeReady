@@ -1138,7 +1138,32 @@ def display_seen(ident, headers, address):
 
 
 # Settings that apply to every display, sent to each one with its printer's summary.
-DISPLAY_DEFAULTS = {"dim": True, "dim_level": 50}     # dim after 5 minutes idle, to this %
+DISPLAY_DEFAULTS = {"dim": True, "dim_level": 50,     # dim after 5 minutes idle, to this %
+                    "server": ""}                     # address displays should move to, if any
+INSTANCE = secrets.token_hex(8)                       # lets this server recognise itself
+
+
+def tidy_address(text):
+    """'192.168.2.2:8080/' -> 'http://192.168.2.2:8080', as the displays do it. '' if unusable."""
+    text = str(text or "").strip().rstrip("/")
+    if not text:
+        return ""
+    if "://" not in text:
+        text = "http://" + text
+    parts = urllib.parse.urlsplit(text)
+    if parts.scheme not in ("http", "https") or not parts.netloc or len(text) > 100 \
+            or any(ord(c) < 33 or ord(c) > 126 for c in text):
+        return ""
+    return text
+
+
+def reaches_this_server(address):
+    """True if that address answers as this very server (asked from here, not from a display)."""
+    try:
+        with urllib.request.urlopen(address + "/api/session", timeout=4) as r:
+            return json.loads(r.read(4096)).get("instance") == INSTANCE
+    except Exception:
+        return False
 
 
 def display_settings():
@@ -1150,6 +1175,7 @@ def display_settings():
             out["dim_level"] = max(5, min(90, int(saved.get("dim_level", out["dim_level"]))))
         except (TypeError, ValueError):
             pass
+        out["server"] = tidy_address(saved.get("server"))
     return out
 
 
@@ -1160,6 +1186,8 @@ def display_settings_save(data):
         now["dim"] = data["dim"]
     if isinstance(data.get("dim_level"), (int, float)) and not isinstance(data.get("dim_level"), bool):
         now["dim_level"] = max(5, min(90, int(data["dim_level"])))
+    if isinstance(data.get("server"), str):
+        now["server"] = tidy_address(data["server"])
     with LOCK:
         CFG["DISPLAY_SETTINGS"] = now
         save_config()
@@ -1754,8 +1782,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/manifest.webmanifest":
             self.send(200, MANIFEST, "application/manifest+json")
         elif path == "/api/session":
-            self.send(200, json.dumps({"required": auth_required(),
-                                       "authed": self.authed()}).encode())
+            self.send(200, json.dumps({"required": auth_required(), "authed": self.authed(),
+                                       "instance": INSTANCE}).encode())
         elif path == "/api/display":
             # A printer display, identified by its own token instead of a page login.
             name = display_printer(self.headers)
@@ -1766,6 +1794,8 @@ class Handler(BaseHTTPRequestHandler):
                 # The farm-wide display settings: how far to dim when idle, -1 for never.
                 conf = display_settings()
                 out["dim"] = conf["dim_level"] if conf["dim"] else -1
+                if conf["server"]:
+                    out["server"] = conf["server"]         # where displays should call from now on
                 # Tell the server's list this display is alive; pass on a request to update.
                 if display_seen(display_ident(self.headers), self.headers, self.client_address[0]):
                     out["update"] = True
@@ -1871,6 +1901,18 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 data = {}
             if len(parts) == 4 and parts[3] == "settings":
+                # A new address for the displays is checked first: sending a wrong one would
+                # send every display looking for a server that isn't there.
+                want = data.get("server")
+                if isinstance(want, str) and want.strip():
+                    address = tidy_address(want)
+                    if not address:
+                        self.send(400, b'{"error":"That is not an address a display can use."}')
+                        return
+                    if not data.get("force") and not reaches_this_server(address):
+                        self.send(409, json.dumps({"unverified": True, "error":
+                            "This server couldn't reach itself at %s." % address}).encode())
+                        return
                 self.send(200, json.dumps({"settings": display_settings_save(data)}).encode())
             elif len(parts) == 4 and parts[3] == "update":
                 want = data.get("ids")

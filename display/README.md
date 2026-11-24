@@ -7,14 +7,16 @@ filament to load for the next waiting job, and a **Set Ready** button.
 
 *Mock-up of the layout with sample data.*
 
-**Status:** running on a real two-socket board (ST7789 screen): flashing, both setup
-steps and the printer screen work. The touch button has not been tried yet.
+**Status:** running on real boards (two-socket ESP32-2432S028 with the ST7789 screen,
+and an LCDWiki ESP32-32E with the ILI9341 screen): flashing, both setup steps and the
+printer screens work, and touch works on the ESP32-32E board.
 
 ## What you need
 
 - An **ESP32-2432S028** board ("Cheap Yellow Display"): 2.8" 320×240 screen, single
   micro-USB port. The `R` version has resistive touch; without touch it still works as a
-  display, but the Set Ready button can't be pressed.
+  display, but the Set Ready button can't be pressed. The orange **LCDWiki 2.8inch
+  ESP32-32E** board (E32R28T, USB-C) uses the same pins and also works.
 - A micro-USB **data** cable and a computer with Chrome or Edge, for the one-off flash.
 - A phone, for the setup steps.
 - The MakeReady server reachable from your Wi-Fi (2.4 GHz), with the Watchtower login set
@@ -32,9 +34,12 @@ its Wi-Fi, server and token after it starts.
 
    | File | Screen | Usually found on |
    |---|---|---|
-   | `printer-display.factory.bin` | ILI9341 | boards with a single micro-USB port |
+   | `printer-display.factory.bin` | ILI9341 | boards with a single micro-USB port; the LCDWiki ESP32-32E board (confirmed on one) |
    | `printer-display-st7789.factory.bin` | ST7789 | boards with micro-USB and USB-C (confirmed on one) |
    | `printer-display-ili9342.factory.bin` | ILI9342 | some boards with micro-USB and USB-C |
+
+   A screen that stays **white** with the backlight on means the file is for a different
+   screen chip: flash one of the other two. Nothing is harmed by trying.
 
 2. Plug the board into the computer and open <https://web.esphome.io> in Chrome or Edge.
 3. Click **Connect**, pick the board's serial port, then **Install** and choose the file.
@@ -64,6 +69,10 @@ Put your phone back on your normal Wi-Fi and scan it to open the board's setting
 
 Then press **Save and restart**. The board restarts and shows the printer within a few
 seconds. The settings are kept on the board and survive power cuts.
+
+**If the MakeReady server moves.** You don't have to visit each board: on the MakeReady
+page, **Settings → Printer displays → Settings for all displays** can send every display
+the new address. See the main README.
 
 **Changing things later.** Open the board's address again to change the server or
 token. Whenever the server can't be reached, the screen shows the reason with a QR code
@@ -119,6 +128,10 @@ With [ESPHome](https://esphome.io/guides/installing_esphome) installed:
 `esphome run printer-display.yaml`. The `default_server` and `default_token` values at
 the top of the file can bake those two settings in, which saves step 2 when you are
 only making one.
+
+The page a phone is shown while joining a new board's Wi-Fi is `setup-page.html`. The
+firmware carries a compressed copy of it; after editing the page, run
+`python3 make-setup-page.py` to rebuild that copy (the build checks they match).
 
 ## What the screen shows
 

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Printer display: Wi-Fi</title>
+<!-- The page a phone is shown after joining a new board's own Wi-Fi: pick the real Wi-Fi.
+     Served by the board in place of ESPHome's stock page (see components/captive_portal).
+     It must work with no internet, so everything is in this one file.
+     After changing it, run make-setup-page.py to rebuild the copy the firmware carries. -->
+<style>
+:root { --bg:#f4f5f7; --card:#fff; --text:#16181d; --muted:#667085; --line:#dde1e7;
+        --green:#16803c; --red:#c62828; --field:#fff; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#111317; --card:#1b1e24; --text:#eceef2; --muted:#9aa3b2; --line:#2c313a;
+          --green:#1c8f45; --red:#ef5350; --field:#111317; } }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin:0; background:var(--bg); color:var(--text);
+       font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.wrap { max-width:560px; margin:0 auto; padding:20px 16px 40px; }
+header { display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+header svg { width:44px; height:44px; flex:none; }
+h1 { font-size:20px; margin:0; }
+.sub { color:var(--muted); font-size:14px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+        padding:16px; margin-bottom:14px; }
+h2 { font-size:16px; margin:0 0 4px; }
+.hint { color:var(--muted); font-size:13px; margin:0 0 12px; }
+label { display:block; font-size:14px; font-weight:600; margin:12px 0 0; }
+input { display:block; width:100%; margin-top:5px; padding:10px; font:inherit; color:var(--text);
+        background:var(--field); border:1px solid var(--line); border-radius:8px; }
+.nets { display:flex; flex-direction:column; gap:6px; }
+.net { display:flex; align-items:center; gap:10px; width:100%; text-align:left; font:inherit;
+       padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:transparent;
+       color:var(--text); cursor:pointer; }
+.net.on { border-color:var(--green); box-shadow:0 0 0 1px var(--green) inset; }
+.net .name { flex:1; min-width:0; overflow-wrap:anywhere; font-weight:600; }
+.net .how { color:var(--muted); font-size:13px; flex:none; }
+.net svg { width:18px; height:18px; flex:none; fill:var(--muted); }
+.bars { display:flex; align-items:flex-end; gap:2px; height:16px; flex:none; }
+.bars i { width:4px; border-radius:1px; background:var(--line); }
+.bars i.lit { background:var(--text); }
+.btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+button.act { font:inherit; font-weight:600; font-size:15px; padding:10px 16px; border-radius:8px;
+             border:1px solid var(--line); background:transparent; color:var(--text); cursor:pointer; }
+button.primary { background:var(--green); border-color:var(--green); color:#fff; }
+button:disabled { opacity:.5; cursor:default; }
+.note { font-size:14px; margin:12px 0 0; }
+.note:empty { display:none; }
+.note.bad { color:var(--red); } .note.good { color:var(--green); }
+.foot { color:var(--muted); font-size:12px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="5" width="28" height="22" rx="4" fill="#1b1e24"/><rect x="5" y="8" width="22" height="16" rx="1.5" fill="#111317"/><rect x="7" y="10.5" width="10" height="2.4" rx="1.2" fill="#eceef2"/><circle cx="23.5" cy="11.7" r="1.7" fill="#35b765"/><rect x="7" y="17.5" width="18" height="4" rx="1" fill="#2c313a"/><rect x="7" y="17.5" width="11" height="4" rx="1" fill="#1c8f45"/></svg>
+    <div><h1>Printer display</h1><div class="sub">Setup 1 of 2: Wi-Fi</div></div>
+  </header>
+
+  <section class="card" id="pick">
+    <h2>Choose your Wi-Fi</h2>
+    <p class="hint">The network your MakeReady page is on. 2.4 GHz only.</p>
+    <div class="nets" id="nets"><div class="hint" id="looking">Looking for networks…</div></div>
+    <div id="manual" hidden>
+      <label>Network name <input id="ssid" maxlength="32" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+    </div>
+    <label id="pass-row" hidden>Password <span id="for"></span>
+      <input id="psk" type="password" maxlength="64" autocomplete="off"></label>
+    <div class="btns">
+      <button type="button" class="act primary" id="go" disabled>Connect</button>
+      <button type="button" class="act" id="again">Look again</button>
+    </div>
+    <p class="note" id="note"></p>
+  </section>
+
+  <section class="card" id="done" hidden>
+    <h2>Joining <span id="joined"></span>…</h2>
+    <p class="hint" style="margin:8px 0 0">The board is leaving its own Wi-Fi to join yours, so this page will
+      stop responding. Look at the board's screen: it shows the next step, or comes back to
+      this one if the password was wrong.</p>
+  </section>
+
+  <p class="foot" id="foot"></p>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const LOCK = '<svg viewBox="0 0 24 24" aria-label="Needs a password"><path d="M17 9V7A5 5 0 0 0 7 7v2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2zm-8 0V7a3 3 0 0 1 6 0v2z"/></svg>';
+let chosen = null;                       // {ssid, lock}, or {other: true}
+
+function bars(rssi) {
+  const n = rssi > -60 ? 4 : rssi > -70 ? 3 : rssi > -80 ? 2 : 1;
+  return '<span class="bars" aria-hidden="true">' +
+    [5, 8, 12, 16].map((h, i) => '<i style="height:' + h + 'px"' + (i < n ? ' class="lit"' : '') + '></i>').join('') + '</span>';
+}
+
+function pick(net, el) {
+  chosen = net;
+  document.querySelectorAll('.net').forEach(b => b.classList.toggle('on', b === el));
+  $('manual').hidden = !net.other;
+  $('pass-row').hidden = !(net.other || net.lock);
+  $('for').textContent = net.other ? '(leave blank if it has none)' : '';
+  $('go').disabled = false;
+  $('note').textContent = '';
+  (net.other ? $('ssid') : net.lock ? $('psk') : $('go')).focus();
+}
+
+function show(list) {
+  const box = $('nets');
+  box.replaceChildren();
+  // One row per name, strongest first: a network with several access points is seen several times.
+  const best = new Map();
+  for (const a of list) if (a && a.ssid && (!best.has(a.ssid) || best.get(a.ssid).rssi < a.rssi)) best.set(a.ssid, a);
+  for (const a of [...best.values()].sort((x, y) => y.rssi - x.rssi)) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'net';
+    b.innerHTML = bars(a.rssi) + '<span class="name"></span>' + (a.lock ? LOCK : '<span class="how">open</span>');
+    b.querySelector('.name').textContent = a.ssid;
+    b.addEventListener('click', () => pick({ ssid: a.ssid, lock: !!a.lock }, b));
+    box.append(b);
+  }
+  if (!best.size) {
+    const p = document.createElement('div'); p.className = 'hint'; p.id = 'looking';
+    p.textContent = 'No networks found yet. Try "Look again" in a few seconds.';
+    box.append(p);
+  }
+  const o = document.createElement('button');
+  o.type = 'button'; o.className = 'net';
+  o.innerHTML = '<span class="name">Other network…</span><span class="how">type its name</span>';
+  o.addEventListener('click', () => pick({ other: true }, o));
+  box.append(o);
+}
+
+async function load() {
+  $('again').disabled = true;
+  try {
+    const c = await (await fetch('/config.json', { cache: 'no-store' })).json();
+    $('foot').textContent = [c.name, c.mac].filter(Boolean).join(' · ');
+    show(c.aps || []);
+  } catch { show([]); $('note').className = 'note bad'; $('note').textContent = "Couldn't read the network list from the board."; }
+  $('again').disabled = false;
+  chosen = null; $('go').disabled = true; $('pass-row').hidden = true; $('manual').hidden = true;
+}
+
+$('again').addEventListener('click', load);
+$('go').addEventListener('click', async () => {
+  const ssid = chosen && (chosen.other ? $('ssid').value.trim() : chosen.ssid);
+  const psk = $('pass-row').hidden ? '' : $('psk').value;
+  const note = $('note');
+  note.className = 'note bad';
+  if (!ssid) { note.textContent = 'Enter the network name.'; return; }
+  if (psk && psk.length < 8) { note.textContent = 'Wi-Fi passwords are at least 8 characters.'; return; }
+  $('go').disabled = true;
+  note.className = 'note'; note.textContent = 'Sending to the board…';
+  try {
+    const r = await fetch('/wifisave?' + new URLSearchParams({ ssid, psk }));
+    if (!r.ok) throw new Error();
+    $('joined').textContent = ssid;
+    $('pick').hidden = true; $('done').hidden = false;
+  } catch {
+    note.className = 'note bad'; note.textContent = "Couldn't reach the board. Check you are still on its Wi-Fi and try again.";
+    $('go').disabled = false;
+  }
+});
+['ssid', 'psk'].forEach(id => {
+  $(id).addEventListener('keydown', e => { if (e.key === 'Enter') $('go').click(); });
+  $(id).addEventListener('input', () => { $('note').textContent = ''; });
+});
+load();
+</script>
+</body>
+</html>

@@ -265,7 +265,7 @@ standing at the machine can see what it needs without opening the page.
 | Cost | Roughly £10–15 each |
 | Power | USB, about 0.6–0.75 W (120–150 mA at 5 V); any USB port or phone charger. Can be powered from the USB port on a Bambu printer's AP board |
 | Network | Wi-Fi, 2.4 GHz only |
-| Screen types | Three look-alike variants (ILI9341, ST7789, ILI9342). There is a firmware file for each; boards with both a micro-USB and a USB-C socket have so far needed the ST7789 one |
+| Screen types | Three look-alike variants (ILI9341, ST7789, ILI9342). There is a firmware file for each; boards with both a micro-USB and a USB-C socket have so far needed the ST7789 one. The orange LCDWiki 2.8inch ESP32-32E board (E32R28T) also works, with the ILI9341 file |
 
 The same boards are often sold pre-loaded as desktop crypto "lottery miner" gadgets;
 those work too, once reflashed.
@@ -325,6 +325,13 @@ within about 10 seconds, and they are kept in `config.json`.
 - **Dim the screens after 5 minutes without a touch**, and how far: a percentage of the
   brightness set on each display's own page (5 to 90). Untick it to keep the screens at
   full brightness.
+- **MakeReady address the displays call.** For when this server moves to another
+  address: enter the new one and press **Send to displays**, and every connected display
+  switches to it, so nobody has to visit each board. The server first checks that it can
+  reach itself at that address and asks before sending one it can't confirm. A display
+  that gets no answer at the new address within 45 seconds goes back to the one it had.
+  Do this while the server still answers at the old address, since that is how the
+  displays hear about the new one.
 
 ### What a display can do
 
@@ -336,11 +343,12 @@ token or firmware.
 
 ### Status
 
-Running on real two-socket boards with the ST7789 screen: flashing, on-screen setup,
-the printer screens, live data and the "receiving a job" bar all work, and the boards
-have been updated over Wi-Fi. Built but not yet confirmed on hardware: the touch pages
-(job list, opening a job), Not ready, Resume, dimming, renaming a board, and updating
-displays from the MakeReady page.
+Running on real boards: two-socket ESP32-2432S028 boards with the ST7789 screen, and an
+LCDWiki ESP32-32E board with the ILI9341 screen. Flashing, on-screen setup, the printer
+screens, live data and the "receiving a job" bar all work, the boards have been updated
+over Wi-Fi, and touch works on the ESP32-32E board. Built but not yet confirmed one by
+one on hardware: Not ready, Resume, dimming, renaming a board, and updating displays
+from the MakeReady page.
 
 ## Running it permanently
 
