@@ -5,8 +5,8 @@ for its next job**, so Watchtower can send it one.
 
 "Makeready" is the commercial printers' word for everything done to a press between one
 job and the next. (This project was called Watchtower-SetReady until November 2026. The old
-repository address redirects here, and the Docker image is still published under its
-old name, `watchtower-setready`, as well as the new one.)
+repository address redirects here; the Docker image is now only published as
+`makeready`.)
 
 Watchtower runs the queue: it decides which job goes to which printer and sends it.
 It can only do that once a printer has been cleared and marked ready, and has the

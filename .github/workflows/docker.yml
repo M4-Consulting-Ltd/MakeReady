@@ -28,9 +28,6 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          # The last tag is the image's name from before the project was renamed, kept so
-          # containers still pointing at it carry on updating.
           tags: |
             ghcr.io/m4-consulting-ltd/makeready:latest
             ghcr.io/m4-consulting-ltd/makeready:${{ github.sha }}
-            ghcr.io/m4-consulting-ltd/watchtower-setready:latest
