@@ -532,6 +532,81 @@ def _job_name(job, md):
     return name
 
 
+# ---- Order numbers ---------------------------------------------------------------------
+# A job made from a shop order carries the order's internal id; the number a person knows
+# it by ("#1042") is on the order itself. Looked up once per order and remembered.
+ORDER_KEYS = ("order_number", "order_name", "number", "name", "external_order_number",
+              "external_order_id", "external_id", "reference", "order_ref")
+ORDER_NUMBERS = {}            # order id -> number as text, "" if it has none we can find
+ORDER_API = {"ok": True}      # set False once Watchtower says it has no such address
+ORDER_SEEN = set()
+
+
+def _order_text(source):
+    """An order's number from a dict that may describe one, or ""."""
+    if not isinstance(source, dict):
+        return ""
+    for key in ORDER_KEYS:
+        value = source.get(key)
+        if isinstance(value, (str, int)) and not isinstance(value, bool) and str(value).strip():
+            text = str(value).strip()
+            # Not the internal id again (a long run of hex and dashes).
+            if not (len(text) > 20 and all(c in "0123456789abcdefABCDEF-" for c in text)):
+                return text[:24]
+    return ""
+
+
+def _note_shape(what, source):
+    """Log an unfamiliar reply's field names once (names only), to help find the number."""
+    if isinstance(source, dict):
+        keys = (what,) + tuple(sorted(str(k) for k in source))
+        if keys not in ORDER_SEEN:
+            ORDER_SEEN.add(keys)
+            print("Watchtower %s has fields: %s" % (what, ", ".join(keys[1:])), file=sys.stderr)
+
+
+def order_number(job, md, lookups):
+    """The order number for a job, or "". lookups: a one-item list counting calls allowed."""
+    for entry in job.get("linked_orders") or []:
+        if isinstance(entry, dict):
+            text = _order_text(entry) or _order_text(entry.get("order"))
+            if text:
+                return text
+            _note_shape("linked order", entry)
+        elif isinstance(entry, (str, int)) and str(entry).strip() and len(str(entry)) <= 20:
+            return str(entry).strip()
+    text = _order_text(md)
+    if text:
+        return text
+    ident = str(md.get("order_id") or "").strip()
+    if not ident:
+        return ""
+    with LOCK:
+        if ident in ORDER_NUMBERS:
+            return ORDER_NUMBERS[ident]
+    if not ORDER_API["ok"] or lookups[0] <= 0:
+        return ""
+    lookups[0] -= 1
+    found = ""
+    try:
+        reply = _unwrap(json.loads(cam_fetch("/api/orders/" + urllib.parse.quote(ident, safe=""), timeout=4)))
+        order = reply.get("order") if isinstance(reply, dict) and isinstance(reply.get("order"), dict) else reply
+        found = _order_text(order)
+        if not found:
+            _note_shape("order", order)
+    except urllib.error.HTTPError as e:
+        if e.code in (404, 405):
+            ORDER_API["ok"] = False              # no such address here: stop asking
+        return ""
+    except Exception:
+        return ""                                # try again another time
+    with LOCK:
+        if len(ORDER_NUMBERS) > 2000:
+            ORDER_NUMBERS.clear()
+        ORDER_NUMBERS[ident] = found
+    return found
+
+
 def _matches(need, slot, tolerance):
     if need["type"] and slot["type"] and need["type"] != slot["type"]:
         return False
@@ -701,6 +776,7 @@ def build_queue(queue, assignments, table):
         return colour_name_for(need, loaded)
 
     jobs, needs = [], {}
+    lookups = [12]                     # order numbers to fetch per refresh, at most
     for j in queue.get("jobs") or []:
         md = j.get("metadata") or {}
         fils = []
@@ -752,7 +828,10 @@ def build_queue(queue, assignments, table):
                 want = {k: fils[i][k] for k in ("type", "variant", "color", "name")}
                 if want not in needs.setdefault(best["printer"], []):
                     needs[best["printer"]].append(want)
-        jobs.append({"id": j.get("id"), "name": _job_name(j, md), "status": j.get("status"),
+        order = order_number(j, md, lookups)
+        jobs.append({"id": j.get("id"), "status": j.get("status"),
+                     # the order number, when the job belongs to one, leads the name
+                     "name": ("(%s) " % order if order else "") + _job_name(j, md), "order": order,
                      "printer": assigned, "ready": ready, "best": best, "filaments": fils,
                      # soft = Watchtower's own pick, which it may move to another printer
                      "soft": j.get("assignment_type") == "soft",

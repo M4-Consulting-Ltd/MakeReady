@@ -35,7 +35,8 @@ For each printer it shows:
 - the filament loaded in its slots (optional).
 
 Under the printers, a **Waiting jobs** list (optional) shows what each queued job needs
-and which printer could run it, or what would have to be loaded where.
+and which printer could run it, or what would have to be loaded where. A job made from a
+shop order has the order number in brackets before its name.
 
 It can also drive a small **touch screen on the front of each printer**, showing that
 printer's progress and what to load next, with its own Set Ready button. The page lists
@@ -480,6 +481,9 @@ plate is waiting and the Set Ready button is live.
 - **Jobs being sent** are read from a part of Watchtower's queue reply that has only
   been seen on one install; the job's name may be missing.
 - **Not ready** uses the message Watchtower's own page sends, not a documented command.
+- **Order numbers** in front of job names come from the job's linked order. How
+  Watchtower reports them was worked out without seeing a real example, so they may not
+  appear on every install.
 - **Snapshots, not video.**
 
 ## Licence
