@@ -460,7 +460,7 @@ script:
                         if (parsed && id(g_push) && !id(g_updating) &&
                             (id(g_push_at) == 0 || millis() - id(g_push_at) > 60000)) {
                           id(g_push_at) = millis();
-                          if (id(fw_update).state == update::UPDATE_STATE_AVAILABLE) id(fw_update).perform();
+                          if (id(fw_update).state == update::UPDATE_STATE_AVAILABLE) id(fw_update).perform(false);
                           else id(fw_update).check();
                         }
                     - component.update: screen
