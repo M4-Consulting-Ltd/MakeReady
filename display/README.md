@@ -125,6 +125,10 @@ With [ESPHome](https://esphome.io/guides/installing_esphome) installed:
 the top of the file can bake those two settings in, which saves step 2 when you are
 only making one.
 
+The page a phone is shown while joining a new board's Wi-Fi is `setup-page.html`. The
+firmware carries a compressed copy of it; after editing the page, run
+`python3 make-setup-page.py` to rebuild that copy (the build checks they match).
+
 ## What the screen shows
 
 - **Top bar:** the printer's name and a dot: green when ready, red when printing, paused

@@ -83,6 +83,15 @@ mdns:
 
 improv_serial:                         # lets the browser flasher set Wi-Fi over USB too
 
+# The Wi-Fi setup page a phone is shown on the board's own network is ours
+# (setup-page.html), in place of ESPHome's stock one. ESPHome has no setting for that, so
+# components/captive_portal is its own component with only the page swapped.
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [captive_portal]
+
 captive_portal:
 
 http_request:

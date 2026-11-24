@@ -27,6 +27,8 @@ jobs:
           python-version: "3.12"
       - name: Install ESPHome
         run: pip install esphome==2026.11.0
+      - name: Check the Wi-Fi setup page built into the firmware is up to date
+        run: python display/make-setup-page.py --check
       # One firmware per screen type these boards ship with; the rest is identical.
       - name: Compile
         run: |
