@@ -266,6 +266,8 @@ globals:
   - {id: g_url_post, type: std::string, initial_value: '""'}
   - {id: g_url_undo, type: std::string, initial_value: '""'}
   - {id: g_undo,     type: bool,        initial_value: "false"}  # offer "Not ready"
+  - {id: g_url_resume, type: std::string, initial_value: '""'}
+  - {id: g_resume,   type: bool,        initial_value: "false"}  # offer "Resume" (paused)
   - {id: g_auth,     type: std::string, initial_value: '""'}   # "Bearer <token>"
   - {id: g_ok,     type: bool,        initial_value: "false"}
   - {id: g_error,  type: std::string, initial_value: '""'}   # empty until the first reply
@@ -347,6 +349,7 @@ script:
           id(g_url_get) = s + "/api/display";
           id(g_url_post) = s + "/api/display/set-ready";
           id(g_url_undo) = s + "/api/display/not-ready";
+          id(g_url_resume) = s + "/api/display/resume";
           id(g_auth) = "Bearer " + id(cfg_token).state;
           if (!wifi::global_wifi_component->is_connected()) id(g_setup) = 3;
           else if (s.empty() || id(cfg_token).state.empty()) id(g_setup) = 2;
@@ -392,6 +395,7 @@ script:
                           id(g_warn)   = root["warn"]   | "";
                           id(g_button) = root["button"] | "";
                           id(g_undo)   = root["undo"]   | false;
+                          id(g_resume) = root["resume"] | false;
                           int n = 0;
                           JsonArray fils = root["fil"];
                           for (JsonObject f : fils) {
@@ -457,7 +461,9 @@ script:
       - http_request.post:
           # The one button is Set Ready on a waiting plate, Not ready on a ready printer.
           url: !lambda |-
-            return (id(g_button).empty() && id(g_undo) ? id(g_url_undo) : id(g_url_post)).c_str();
+            if (!id(g_button).empty()) return id(g_url_post).c_str();
+            if (id(g_resume)) return id(g_url_resume).c_str();
+            return (id(g_undo) ? id(g_url_undo) : id(g_url_post)).c_str();
           request_headers:
             Authorization: !lambda return id(g_auth).c_str();
             Content-Type: application/json
@@ -736,6 +742,12 @@ display:
         it.print(12, 62, id(f_huge), TEXT, id(g_left).c_str());
         it.print(12, 112, id(f_small), MUTED, "Estimated completion");
         it.print(12, 128, id(f_huge), TEXT, id(g_done).c_str());
+      } else if (st == "paused" && !advice && !id(g_left).empty()) {
+        // Paused: say so, and keep the time left large. There is no finish time to show,
+        // since nobody knows when it will be resumed.
+        it.print(12, 46, id(f_text), AMBER, fit(id(g_status), id(f_text), 296).c_str());
+        it.print(12, 78, id(f_small), MUTED, "Time left once resumed");
+        it.print(12, 94, id(f_huge), TEXT, id(g_left).c_str());
       } else if (printing) {
         // Printing, with filament to load for a waiting job: times on one line, then advice.
         it.print(12, 46, id(f_text), TEXT, fit(id(g_sub).empty() ? id(g_status) : id(g_sub), id(f_text), 296).c_str());
@@ -755,8 +767,9 @@ display:
         it.print(12, y, id(f_small), TEXT, fit(id(g_job), id(f_small), 296).c_str());
         y += 22;
       }
-      bool undo = id(g_button).empty() && id(g_undo);    // ready: offer to take it back
-      bool button = !id(g_button).empty() || undo;
+      bool resume = id(g_button).empty() && id(g_resume);                 // paused: offer to carry on
+      bool undo = id(g_button).empty() && !resume && id(g_undo);          // ready: offer to take it back
+      bool button = !id(g_button).empty() || undo || resume;
       int bottom = (button || printing || bar) ? 182 : 236;
       for (int i = 0; advice && i < id(g_fil_n) && y + 20 <= bottom; i++) {
         uint32_t c = id(g_fil_c)[i];
@@ -781,7 +794,7 @@ display:
         }
         it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER,
                  id(g_sending) ? "Sending..." : held ? "Keep holding..."
-                 : undo ? "Hold: Not ready" : "Hold: Set Ready");
+                 : undo ? "Hold: Not ready" : resume ? "Hold: Resume print" : "Hold: Set Ready");
       } else if (printing || bar) {
         int pct = id(g_pct) < 0 ? 0 : id(g_pct) > 100 ? 100 : id(g_pct);
         it.filled_rectangle(10, 186, 300, 48, CARD);
@@ -882,6 +895,6 @@ binary_sensor:
     on_press:
       - if:
           condition:
-            lambda: return (!id(g_button).empty() || id(g_undo)) && !id(g_sending) && !id(g_wake);
+            lambda: return (!id(g_button).empty() || id(g_undo) || id(g_resume)) && !id(g_sending) && !id(g_wake);
           then:
             - script.execute: set_ready
