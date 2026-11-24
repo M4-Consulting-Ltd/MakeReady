@@ -325,6 +325,13 @@ within about 10 seconds, and they are kept in `config.json`.
 - **Dim the screens after 5 minutes without a touch**, and how far: a percentage of the
   brightness set on each display's own page (5 to 90). Untick it to keep the screens at
   full brightness.
+- **MakeReady address the displays call.** For when this server moves to another
+  address: enter the new one and press **Send to displays**, and every connected display
+  switches to it, so nobody has to visit each board. The server first checks that it can
+  reach itself at that address and asks before sending one it can't confirm. A display
+  that gets no answer at the new address within 45 seconds goes back to the one it had.
+  Do this while the server still answers at the old address, since that is how the
+  displays hear about the new one.
 
 ### What a display can do
 

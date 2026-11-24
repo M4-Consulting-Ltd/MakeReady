@@ -130,6 +130,11 @@
   .disp-all .disp-level input { width: 72px; font: inherit; padding: 6px 8px; color: var(--text);
                                 background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
   .disp-all .disp-level span { color: var(--muted); }
+  .disp-all .disp-server { font-weight: 600; margin-top: 12px; }
+  .disp-all .disp-server small { font-weight: 400; margin-top: 6px; }
+  .disp-server-row { display: flex; gap: 8px; margin-top: 5px; }
+  .disp-server-row input { flex: 1; min-width: 0; font: inherit; padding: 8px; color: var(--text);
+                           background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
   dialog legend { font-size: 14px; font-weight: 600; padding: 0 4px; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .btns { display: flex; gap: 8px; margin-top: auto; }   /* buttons line up along the row */
@@ -268,6 +273,14 @@
         <label class="disp-level">Dim to
           <input type="number" id="disp-dim-level" min="5" max="90" step="5" inputmode="numeric"> %
           <span>of each display's own brightness</span></label>
+        <label class="disp-server">MakeReady address the displays call
+          <span class="disp-server-row">
+            <input id="disp-server" placeholder="e.g. 192.168.2.2:8080" autocomplete="off" autocapitalize="none" spellcheck="false">
+            <button type="button" id="disp-server-go" class="plain">Send to displays</button>
+          </span>
+          <small>Only needed when this server's address changes. Every connected display switches
+            to it within about 10 seconds; one that can't reach it there goes back to the address
+            it had. Leave blank to leave the displays alone.</small></label>
         <small id="disp-all-note">Applies to every display within about 10 seconds.</small>
       </div>
     </fieldset>
@@ -1111,7 +1124,31 @@ function showDisplaySettings(s) {
   $('disp-dim').checked = !!s.dim;
   $('disp-dim-level').value = s.dim_level;
   $('disp-dim-level').disabled = !s.dim;
+  if (document.activeElement !== $('disp-server')) $('disp-server').value = s.server || '';
 }
+// A new address for every display to call. The server checks it can reach itself there
+// first; if it can't (it may still be right for the displays), ask before sending.
+async function sendDisplayServer(force) {
+  const note = $('disp-all-note'), server = $('disp-server').value.trim();
+  note.textContent = server ? 'Checking that address…' : 'Saving…';
+  try {
+    const r = await fetch('api/displays/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ server, force: !!force }) });
+    const out = await r.json().catch(() => ({}));
+    if (r.status === 409 && out.unverified) {
+      note.textContent = '';
+      if (await ask('Send this address anyway?', out.error + ' It may still be right for the displays ' +
+          '(for example from inside Docker). A display that can\'t reach it goes back to the address it had.',
+          'Send anyway', 'Cancel')) return sendDisplayServer(true);
+      return;
+    }
+    if (!r.ok) throw new Error(out.error || '');
+    showDisplaySettings(out.settings);
+    note.textContent = out.settings.server ? 'Sent. Displays move to ' + out.settings.server + ' within about 10 seconds.'
+                                           : 'Saved. Displays keep the address they have.';
+  } catch (e) { note.textContent = e.message || "Couldn't save the display settings."; }
+}
+$('disp-server-go').addEventListener('click', () => sendDisplayServer(false));
 async function saveDisplaySettings() {
   const level = Math.max(5, Math.min(90, Math.round(+$('disp-dim-level').value) || 50));
   const note = $('disp-all-note');

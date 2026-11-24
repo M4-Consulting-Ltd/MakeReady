@@ -280,6 +280,12 @@ globals:
   - {id: g_url_resume, type: std::string, initial_value: '""'}
   - {id: g_resume,   type: bool,        initial_value: "false"}  # offer "Resume" (paused)
   - {id: g_push,     type: bool,        initial_value: "false"}  # the server asked us to update
+  # Moving to a new server address sent from the MakeReady page: where we came from, when
+  # we switched, and an address that didn't work so we don't try it again.
+  - {id: g_move_to,   type: std::string, initial_value: '""'}
+  - {id: g_move_from, type: std::string, initial_value: '""'}
+  - {id: g_move_at,   type: uint32_t,    initial_value: "0"}
+  - {id: g_move_bad,  type: std::string, initial_value: '""'}
   - {id: g_push_at,  type: uint32_t,    initial_value: "0"}
   - {id: g_auth,     type: std::string, initial_value: '""'}   # "Bearer <token>"
   - {id: g_ok,     type: bool,        initial_value: "false"}
@@ -416,6 +422,14 @@ script:
                           id(g_undo)   = root["undo"]   | false;
                           id(g_resume) = root["resume"] | false;
                           id(g_push)   = root["update"] | false;
+                          // The MakeReady page can tell every display to call a new address
+                          // (the server moved). Switch to it; the check that runs every
+                          // second goes back if it doesn't answer.
+                          std::string moved = root["server"] | "";
+                          if (!moved.empty() && moved.size() <= 100 && moved != id(g_base) &&
+                              moved != id(g_move_bad) && id(g_move_at) == 0) {
+                            id(g_move_to) = moved;        // acted on by the once-a-second check
+                          }
                           // Farm-wide dimming, set on the MakeReady page. A server from
                           // before that setting leaves the built-in 50%.
                           int dim_to = root["dim"] | 50;
@@ -474,6 +488,7 @@ script:
                         });
                         id(g_ok) = parsed;
                         if (!parsed) id(g_error) = "Bad reply from server";
+                        if (parsed) id(g_move_at) = 0;          // a move, if one was under way, worked
                         // The MakeReady page asked this board to update: install what the
                         // last check found, or go and look. Not more than once a minute.
                         if (parsed && id(g_push) && !id(g_updating) &&
@@ -514,6 +529,23 @@ interval:
   - interval: 1s
     then:
       - lambda: |-
+          // Asked to call a new server address: remember the old one and switch.
+          if (!id(g_move_to).empty() && id(g_move_at) == 0) {
+            id(g_move_from) = id(cfg_server).state;
+            id(g_move_at) = millis() | 1;
+            auto call = id(cfg_server).make_call();
+            call.set_value(id(g_move_to));
+            call.perform();
+          }
+          id(g_move_to) = "";
+          // A new server address that hasn't answered within 45 seconds: go back to the old one.
+          if (id(g_move_at) != 0 && millis() - id(g_move_at) > 45000) {
+            id(g_move_at) = 0;
+            id(g_move_bad) = id(g_base);
+            auto call = id(cfg_server).make_call();
+            call.set_value(id(g_move_from));
+            call.perform();
+          }
           if (!id(g_dim) && id(g_dim_to) >= 0 && millis() - id(g_idle_at) > 5 * 60 * 1000) {
             id(g_dim) = true;
             id(backlight_raw).set_level(id(g_bl) * id(g_dim_to) / 100.0f);

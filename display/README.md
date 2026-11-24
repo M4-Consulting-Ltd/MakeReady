@@ -70,6 +70,10 @@ Put your phone back on your normal Wi-Fi and scan it to open the board's setting
 Then press **Save and restart**. The board restarts and shows the printer within a few
 seconds. The settings are kept on the board and survive power cuts.
 
+**If the MakeReady server moves.** You don't have to visit each board: on the MakeReady
+page, **Settings → Printer displays → Settings for all displays** can send every display
+the new address. See the main README.
+
 **Changing things later.** Open the board's address again to change the server or
 token. Whenever the server can't be reached, the screen shows the reason with a QR code
 to that page.
