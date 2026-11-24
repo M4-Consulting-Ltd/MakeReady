@@ -742,6 +742,12 @@ display:
         it.print(12, 62, id(f_huge), TEXT, id(g_left).c_str());
         it.print(12, 112, id(f_small), MUTED, "Estimated completion");
         it.print(12, 128, id(f_huge), TEXT, id(g_done).c_str());
+      } else if (st == "paused" && !advice && !id(g_left).empty()) {
+        // Paused: say so, and keep the time left large. There is no finish time to show,
+        // since nobody knows when it will be resumed.
+        it.print(12, 46, id(f_text), AMBER, fit(id(g_status), id(f_text), 296).c_str());
+        it.print(12, 78, id(f_small), MUTED, "Time left once resumed");
+        it.print(12, 94, id(f_huge), TEXT, id(g_left).c_str());
       } else if (printing) {
         // Printing, with filament to load for a waiting job: times on one line, then advice.
         it.print(12, 46, id(f_text), TEXT, fit(id(g_sub).empty() ? id(g_status) : id(g_sub), id(f_text), 296).c_str());
