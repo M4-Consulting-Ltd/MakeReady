@@ -167,7 +167,9 @@ update:
     on_update_available:
       - if:
           condition:
-            switch.is_on: auto_update
+            or:
+              - switch.is_on: auto_update
+              - lambda: return id(g_push);      # asked for from the MakeReady page
           then:
             - update.perform: fw_update
 
@@ -268,6 +270,8 @@ globals:
   - {id: g_undo,     type: bool,        initial_value: "false"}  # offer "Not ready"
   - {id: g_url_resume, type: std::string, initial_value: '""'}
   - {id: g_resume,   type: bool,        initial_value: "false"}  # offer "Resume" (paused)
+  - {id: g_push,     type: bool,        initial_value: "false"}  # the server asked us to update
+  - {id: g_push_at,  type: uint32_t,    initial_value: "0"}
   - {id: g_auth,     type: std::string, initial_value: '""'}   # "Bearer <token>"
   - {id: g_ok,     type: bool,        initial_value: "false"}
   - {id: g_error,  type: std::string, initial_value: '""'}   # empty until the first reply
@@ -363,6 +367,11 @@ script:
                 url: !lambda return id(g_url_get).c_str();
                 request_headers:
                   Authorization: !lambda return id(g_auth).c_str();
+                  # Who is asking, for the list of displays on the MakeReady page.
+                  X-Display-Version: "${version}"
+                  X-Display-Screen: "${screen_model}"
+                  X-Display-Name: !lambda return id(name_in_use).state.c_str();
+                  X-Display-Ip: !lambda return id(ip_addr).state.c_str();
                 capture_response: true
                 max_response_buffer_size: 6144
                 on_response:
@@ -396,6 +405,7 @@ script:
                           id(g_button) = root["button"] | "";
                           id(g_undo)   = root["undo"]   | false;
                           id(g_resume) = root["resume"] | false;
+                          id(g_push)   = root["update"] | false;
                           int n = 0;
                           JsonArray fils = root["fil"];
                           for (JsonObject f : fils) {
@@ -445,6 +455,14 @@ script:
                         });
                         id(g_ok) = parsed;
                         if (!parsed) id(g_error) = "Bad reply from server";
+                        // The MakeReady page asked this board to update: install what the
+                        // last check found, or go and look. Not more than once a minute.
+                        if (parsed && id(g_push) && !id(g_updating) &&
+                            (id(g_push_at) == 0 || millis() - id(g_push_at) > 60000)) {
+                          id(g_push_at) = millis();
+                          if (id(fw_update).state == update::UPDATE_STATE_AVAILABLE) id(fw_update).perform(false);
+                          else id(fw_update).check();
+                        }
                     - component.update: screen
                 on_error:
                   then:

@@ -94,6 +94,10 @@ its screen type. The **Firmware** section of its page shows the result, with an
 only works if the board can reach the internet (github.com). A board flashed before
 this feature existed has to be updated by USB once more.
 
+**Updating many boards.** The MakeReady page lists every display under **Settings →
+Printer displays**, with its version and an **Update** button (and **Update all**) when
+a newer firmware is out. See the main README.
+
 **Do updates keep the settings?** Yes: the Wi-Fi, MakeReady address, token and screen
 options stay on the board through an update. (One exception has already happened: the
 update that renamed the address field to "MakeReady page address" lost the saved
