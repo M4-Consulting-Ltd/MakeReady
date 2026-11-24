@@ -125,6 +125,7 @@ text:
     max_length: 100
     initial_value: "${default_server}"
     on_value:
+      - lambda: global_preferences->sync();      # keep it through a power cut straight away
       - script.execute: fetch
   # The board's name on the network. Blank = the built-in printer-display-xxxxxx.
   - platform: template
@@ -146,6 +147,7 @@ text:
     max_length: 80
     initial_value: "${default_token}"
     on_value:
+      - lambda: global_preferences->sync();      # keep it through a power cut straight away
       - script.execute: fetch
   # New Wi-Fi details for the "Wi-Fi change" button. Not kept after a restart.
   - platform: template
@@ -202,7 +204,7 @@ switch:
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
 
-# "Apply and restart" on the settings page. Values are saved as they are entered; this
+# Restart button (the settings page uses it after a name change). Values are saved as they are entered; this
 # restarts the board so it comes up cleanly with them.
 button:
   - platform: restart
@@ -258,6 +260,10 @@ text_sensor:
   - platform: template
     id: name_in_use
     name: Network name in use
+  # Whether the MakeReady server is answering, for the settings page.
+  - platform: template
+    id: link_state
+    name: MakeReady connection
   - platform: template
     id: wifi_change
     name: "Wi-Fi change: result"
@@ -529,6 +535,14 @@ interval:
   - interval: 1s
     then:
       - lambda: |-
+          // Tell the settings page how the connection to MakeReady is doing.
+          {
+            std::string link = id(g_setup) == 2 ? "Not set up yet"
+                             : id(g_setup) == 3 ? "Waiting for Wi-Fi"
+                             : id(g_ok) ? "Connected: " + id(g_title)
+                             : id(g_error).empty() ? "Connecting..." : id(g_error);
+            if (id(link_state).state != link) id(link_state).publish_state(link);
+          }
           // Asked to call a new server address: remember the old one and switch.
           if (!id(g_move_to).empty() && id(g_move_at) == 0) {
             id(g_move_from) = id(cfg_server).state;
@@ -695,8 +709,7 @@ display:
         it.print(12, 94, id(f_text), TEXT, "settings.");
         it.print(12, 126, id(f_small), MUTED, "Enter the MakeReady");
         it.print(12, 144, id(f_small), MUTED, "address and token,");
-        it.print(12, 162, id(f_small), MUTED, "then press Apply");
-        it.print(12, 180, id(f_small), MUTED, "and restart.");
+        it.print(12, 162, id(f_small), MUTED, "then press Save.");
         it.print(12, 214, id(f_small), GREEN, fit(url, id(f_small), 296).c_str());
         return;
       }
