@@ -240,6 +240,11 @@ The cards arrange themselves from the screen size and the number of printers:
 
 Light and dark themes follow the device setting.
 
+The foot of the page shows which version of MakeReady is running, as the date and short
+hash of its commit (for example `2026.11.25-b0e4fd4`). The Docker image has it built
+in; a copy run from a git checkout reads it from git when it starts. A copy downloaded
+without git shows no version.
+
 ### On a phone or tablet's home screen
 
 Add the page to the home screen to open it like an app, full screen, with its own icon:
