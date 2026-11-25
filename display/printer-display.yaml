@@ -31,6 +31,8 @@ substitutions:
   touch_mirror_x: "false"
   touch_mirror_y: "false"
   # Optional: bake values in at build time instead of entering them on the board.
+  # How many waiting jobs the job list can hold. The server sends up to this many.
+  max_jobs: "30"
   default_server: ""
   default_token: ""
 
@@ -322,20 +324,20 @@ globals:
   - {id: g_page_at, type: uint32_t,   initial_value: "0"}     # when the queue page was opened
   - {id: g_q_n,     type: int,        initial_value: "0"}
   - {id: g_q_more,  type: int,        initial_value: "0"}
-  - {id: g_q_name,  type: "std::array<std::string, 8>"}
-  - {id: g_q_time,  type: "std::array<std::string, 8>"}
-  - {id: g_q_ok,    type: "std::array<bool, 8>"}
-  - {id: g_q_ncol,  type: "std::array<int, 8>"}
-  - {id: g_q_col,   type: "std::array<std::array<uint32_t, 4>, 8>"}
+  - {id: g_q_name,  type: "std::array<std::string, ${max_jobs}>"}
+  - {id: g_q_time,  type: "std::array<std::string, ${max_jobs}>"}
+  - {id: g_q_ok,    type: "std::array<bool, ${max_jobs}>"}
+  - {id: g_q_ncol,  type: "std::array<int, ${max_jobs}>"}
+  - {id: g_q_col,   type: "std::array<std::array<uint32_t, 4>, ${max_jobs}>"}
   # Each job's filaments, for the page a tap on a job opens.
-  - {id: g_q_tag,   type: "std::array<std::string, 8>"}        # "Queued", "Assigned here", "Soft: P1S-3"
-  - {id: g_q_fn,    type: "std::array<int, 8>"}
-  - {id: g_q_fx,    type: "std::array<int, 8>"}                # filaments beyond the four shown
-  - {id: g_q_id,    type: "std::array<int, 8>"}                # Watchtower's job number, 0 if not sent
+  - {id: g_q_tag,   type: "std::array<std::string, ${max_jobs}>"}        # "Queued", "Assigned here", "Soft: P1S-3"
+  - {id: g_q_fn,    type: "std::array<int, ${max_jobs}>"}
+  - {id: g_q_fx,    type: "std::array<int, ${max_jobs}>"}                # filaments beyond the four shown
+  - {id: g_q_id,    type: "std::array<int, ${max_jobs}>"}                # Watchtower's job number, 0 if not sent
   - {id: g_next_job, type: int,       initial_value: "0"}      # job being moved to the top of the queue
   - {id: g_url_next, type: std::string, initial_value: '""'}
-  - {id: g_q_ft,    type: "std::array<std::array<std::string, 4>, 8>"}
-  - {id: g_q_fok,   type: "std::array<std::array<bool, 4>, 8>"}
+  - {id: g_q_ft,    type: "std::array<std::array<std::string, 4>, ${max_jobs}>"}
+  - {id: g_q_fok,   type: "std::array<std::array<bool, 4>, ${max_jobs}>"}
   - {id: g_q_top,   type: int,        initial_value: "0"}     # first job shown in the list
   - {id: g_q_sel,   type: int,        initial_value: "-1"}    # job opened, -1 = the list
   # Swipe tracking: where the finger went down and where it was last seen.
@@ -395,10 +397,11 @@ script:
                   # Who is asking, for the list of displays on the MakeReady page.
                   X-Display-Version: "${version}"
                   X-Display-Screen: "${screen_model}"
+                  X-Display-Jobs: "${max_jobs}"        # how many jobs this firmware can list
                   X-Display-Name: !lambda return id(name_in_use).state.c_str();
                   X-Display-Ip: !lambda return id(ip_addr).state.c_str();
                 capture_response: true
-                max_response_buffer_size: 6144
+                max_response_buffer_size: 16384     # room for the whole job list
                 on_response:
                   then:
                     - lambda: |-
@@ -464,7 +467,7 @@ script:
                           bool full = !root["jobs"].isNull();
                           JsonArray jobs = full ? root["jobs"] : root["queue"];
                           for (JsonObject j : jobs) {
-                            if (q >= 8) break;
+                            if (q >= ${max_jobs}) break;
                             id(g_q_name)[q] = j["n"] | "";
                             id(g_q_time)[q] = j["t"] | "";
                             id(g_q_ok)[q] = j["ok"] | false;
@@ -784,11 +787,12 @@ display:
           }
           return;
         }
-        // The list, four at a time. Tap a job to open it; tap the bottom line (or swipe
-        // up or down) for the next four.
-        int top = id(g_q_top);
-        for (int i = top; i < id(g_q_n) && i < top + 4; i++) {
-          int y = 44 + (i - top) * 44;
+        // The list. Up to four jobs fit; with more, three are shown above a bar with big
+        // Previous and Next buttons (a swipe up or down does the same). Tap a job to open it.
+        int per = id(g_q_n) > 4 ? 3 : 4, pitch = per == 3 ? 46 : 44;
+        int top = id(g_q_top) - id(g_q_top) % per;
+        for (int i = top; i < id(g_q_n) && i < top + per; i++) {
+          int y = 44 + (i - top) * pitch;
           Color edge = id(g_q_ok)[i] ? GREEN : RED;          // has the filament / needs loading
           it.filled_rectangle(4, y + 2, 4, 38, edge);
           int tw = 0, x1, y1, th;
@@ -806,11 +810,18 @@ display:
           it.print(312, y + 23, id(f_small), MUTED, TextAlign::TOP_RIGHT, id(g_q_tag)[i].c_str());
         }
         int total = id(g_q_n) + id(g_q_more);
-        if (id(g_q_n) > 4) {
-          int last = top + 4 < id(g_q_n) ? top + 4 : id(g_q_n);
-          it.print(160, 221, id(f_small), MUTED, TextAlign::TOP_CENTER,
-                   (std::to_string(top + 1) + "-" + std::to_string(last) + " of " + std::to_string(total) +
-                    "   tap here for more").c_str());
+        if (per == 3) {
+          int last = top + per < id(g_q_n) ? top + per : id(g_q_n);
+          bool prev = top > 0, next = top + per < id(g_q_n);
+          it.filled_rectangle(10, 186, 100, 48, CARD);
+          it.rectangle(10, 186, 100, 48, prev ? TEXT : CARD);
+          it.print(60, 210, id(f_text), prev ? TEXT : MUTED, TextAlign::CENTER, "Previous");
+          it.filled_rectangle(210, 186, 100, 48, CARD);
+          it.rectangle(210, 186, 100, 48, next ? TEXT : CARD);
+          it.print(260, 210, id(f_text), next ? TEXT : MUTED, TextAlign::CENTER, "Next");
+          it.print(160, 201, id(f_small), MUTED, TextAlign::CENTER,
+                   (std::to_string(top + 1) + "-" + std::to_string(last)).c_str());
+          it.print(160, 219, id(f_small), MUTED, TextAlign::CENTER, ("of " + std::to_string(total)).c_str());
         } else if (id(g_q_more) > 0) {
           it.print(160, 221, id(f_small), MUTED, TextAlign::TOP_CENTER,
                    ("+" + std::to_string(id(g_q_more)) + " more").c_str());
@@ -952,19 +963,22 @@ touchscreen:
             id(g_q_top) = 0;
           } else if (id(g_page) == 1) {
             // On the queue page: a tap opens a job (and any tap closes it again); the
-            // bottom line, or a swipe up or down, moves through the list four at a time.
-            int n = id(g_q_n), top = id(g_q_top);
+            // Previous and Next buttons, or a swipe down or up, move through the list.
+            int n = id(g_q_n), per = n > 4 ? 3 : 4, pitch = per == 3 ? 46 : 44;
+            int top = id(g_q_top) - id(g_q_top) % per;
             bool up = dy < -60 && abs(dx) < 60, down = dy > 60 && abs(dx) < 60;
+            bool bar = tap && per == 3 && id(g_sw_y0) >= 182;
             if (id(g_q_sel) >= 0) {
               if (tap && !id(g_sending)) id(g_q_sel) = -1;
-            } else if ((tap && id(g_sw_y0) >= 220 && n > 4) || up) {
-              id(g_q_top) = top + 4 < n ? top + 4 : (up ? top : 0);
-            } else if (down) {
-              id(g_q_top) = top >= 4 ? top - 4 : 0;
-            } else if (tap && id(g_sw_y0) >= 44) {
-              int row = top + (id(g_sw_y0) - 44) / 44;
-              if (row < n && row < top + 4) id(g_q_sel) = row;
+            } else if (up || (bar && id(g_sw_x0) >= 160)) {
+              if (top + per < n) top += per;
+            } else if (down || (bar && id(g_sw_x0) < 160)) {
+              if (top >= per) top -= per;
+            } else if (tap && id(g_sw_y0) >= 44 && id(g_sw_y0) < 44 + per * pitch) {
+              int row = top + (id(g_sw_y0) - 44) / pitch;
+              if (row < n) id(g_q_sel) = row;
             }
+            id(g_q_top) = top;
             id(g_page_at) = millis();          // still in use: don't flip back yet
           }
       - component.update: screen

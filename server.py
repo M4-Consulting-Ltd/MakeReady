@@ -1442,7 +1442,7 @@ def _fil_text(f):
     return " ".join(x for x in (f.get("name"), weight, kind) if x) or "Filament"
 
 
-def display_summary(name):
+def display_summary(name, max_jobs=8):
     """Everything a printer's display shows, already worded and trimmed for a small screen."""
     out = {"title": name, "state": "unknown", "status": "", "sub": "", "head": "", "good": False,
            "job": "", "fil": [], "warn": "", "button": "",
@@ -1503,7 +1503,7 @@ def display_summary(name):
                    if name in (j.get("missing_by") or {})
                    and (not j.get("printer") or j["printer"] == name or j.get("soft"))),
                   key=listed)
-    for j in wide[:8]:
+    for j in wide[:max_jobs]:
         mins = j.get("minutes")
         lacking = j["missing_by"][name]
         out["jobs"].append({
@@ -1520,7 +1520,7 @@ def display_summary(name):
             "f": [{"t": _fil_text(f)[:40], "ok": i not in lacking}
                   for i, f in enumerate(j["filaments"])][:4],
             "x": max(0, len(j["filaments"]) - 4)})          # filaments that didn't fit
-    out["jmore"] = max(0, len(wide) - 8)
+    out["jmore"] = max(0, len(wide) - max_jobs)
     if state in ("plate", "ready"):
         runnable = [j for j in queued if not j["missing_by"][name]]
         if runnable:
@@ -1564,7 +1564,8 @@ def display_summary(name):
         for f in row.get("f") or []:
             f["t"] = plain(f["t"])
     # The display reads at most 6 KB: drop jobs off the end of the long list if need be.
-    while out["jobs"] and len(json.dumps(out)) > 5500:
+    # (Firmware that lists more than eight jobs reads up to 16 KB.)
+    while out["jobs"] and len(json.dumps(out)) > (5500 if max_jobs <= 8 else 15000):
         out["jobs"].pop()
         out["jmore"] += 1
     return out
@@ -1925,7 +1926,12 @@ class Handler(BaseHTTPRequestHandler):
             if name is None:
                 self.send(401, b'{"error":"Unknown display token"}')
             else:
-                out = display_summary(name)
+                # Newer firmware says how many jobs its list can hold; older lists eight.
+                try:
+                    most = max(8, min(40, int(self.headers.get("X-Display-Jobs") or 8)))
+                except ValueError:
+                    most = 8
+                out = display_summary(name, most)
                 # The farm-wide display settings: how far to dim when idle, -1 for never.
                 conf = display_settings()
                 out["dim"] = conf["dim_level"] if conf["dim"] else -1
