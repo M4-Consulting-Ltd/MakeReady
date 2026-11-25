@@ -831,7 +831,9 @@ def build_queue(queue, assignments, table):
         order = order_number(j, md, lookups)
         jobs.append({"id": j.get("id"), "status": j.get("status"),
                      # the order number, when the job belongs to one, leads the name
-                     "name": ("(%s) " % order if order else "") + _job_name(j, md), "order": order,
+                     "name": ("(%s) " % order if order else "") + _job_name(j, md),
+                     # made for a shop order: these lead the lists
+                     "for_order": bool(order or md.get("order_id") or j.get("linked_orders")),
                      "printer": assigned, "ready": ready, "best": best, "filaments": fils,
                      # soft = Watchtower's own pick, which it may move to another printer
                      "soft": j.get("assignment_type") == "soft",
@@ -846,8 +848,10 @@ def build_queue(queue, assignments, table):
                      "minutes": round(md["print_time_seconds"] / 60)
                      if md.get("print_time_seconds") else None,
                      "reason": str(md.get("filament_rejection") or "")[:300]})
-    # Jobs that can't run anywhere first, then in Watchtower's own order.
-    jobs.sort(key=lambda x: not (x["best"] and not x["printer"]))
+    # Jobs for orders first. Within each group, jobs that can't run anywhere lead, then
+    # Watchtower's own order.
+    jobs.sort(key=lambda x: (not x["for_order"], not (x["best"] and not x["printer"]),
+                             x["order"], x["created"]))
     return {"jobs": jobs, "loaded": loaded, "needs": needs}
 
 
@@ -1424,11 +1428,16 @@ def display_summary(name):
         out["button"] = "SET READY"
 
     q = queue_data()
-    # The jobs this printer could take, in Watchtower's order: the display's second page.
-    mine = sorted((j for j in q.get("jobs") or []
-                   if name in (j.get("missing_by") or {})
-                   and (not j.get("printer") or j["printer"] == name)),
-                  key=lambda j: (j.get("order") or 0, j.get("created") or ""))
+    # The jobs this printer could take: the display's second page. Jobs for orders come
+    # first, then Watchtower's order. `queued` keeps Watchtower's order alone, for saying
+    # which job Set Ready will actually pick up.
+    def listed(j):
+        return (not j.get("for_order"), j.get("order") or 0, j.get("created") or "")
+    queued = sorted((j for j in q.get("jobs") or []
+                     if name in (j.get("missing_by") or {})
+                     and (not j.get("printer") or j["printer"] == name)),
+                    key=lambda j: (j.get("order") or 0, j.get("created") or ""))
+    mine = sorted(queued, key=listed)
     for j in mine[:4]:
         mins = j.get("minutes")
         out["queue"].append({
@@ -1447,7 +1456,7 @@ def display_summary(name):
     wide = sorted((j for j in q.get("jobs") or []
                    if name in (j.get("missing_by") or {})
                    and (not j.get("printer") or j["printer"] == name or j.get("soft"))),
-                  key=lambda j: (j.get("order") or 0, j.get("created") or ""))
+                  key=listed)
     for j in wide[:8]:
         mins = j.get("minutes")
         lacking = j["missing_by"][name]
@@ -1466,7 +1475,7 @@ def display_summary(name):
             "x": max(0, len(j["filaments"]) - 4)})          # filaments that didn't fit
     out["jmore"] = max(0, len(wide) - 8)
     if state in ("plate", "ready"):
-        runnable = [j for j in mine if not j["missing_by"][name]]
+        runnable = [j for j in queued if not j["missing_by"][name]]
         if runnable:
             j = runnable[0]
             out.update(good=True, job=j["name"],

@@ -920,8 +920,9 @@ function renderCardFilament(name, c) {
       if (low.length) needs.append(el('b', '', 'Not enough filament loaded'),
                                    el('div', '', low.join('; ')));
     } else {
-      // Nothing can run as loaded: say what the job highest in the queue needs.
-      const j = mine[0];
+      // Nothing can run as loaded: say what to load, for an order's job first, then
+      // the job highest in the queue.
+      const j = mine.slice().sort((a, b) => (b.for_order ? 1 : 0) - (a.for_order ? 1 : 0))[0];
       const chips = el('div', 'chips');
       chips.append(...j.missing_by[name].map(i => chip(j.filaments[i], true)));
       needs.append(el('b', '', 'No waiting job can run here yet'),

@@ -186,8 +186,9 @@ With the Watchtower login set:
   spools with a tag can be read this way. Below the swatches is advice about the queue:
   - *Idle printer* (plate waiting, or ready): either **Set Ready can pick up a waiting
     job**, naming the job highest in Watchtower's queue that its loaded filament can
-    run, or **No waiting job can run here yet**, with the job highest in the queue and
-    exactly what to load for it. Reorder the queue in Watchtower and the advice follows.
+    run, or **No waiting job can run here yet**, with exactly what to load for the next
+    job: one for a shop order if there is one, otherwise the job highest in the queue.
+    Reorder the queue in Watchtower and the advice follows.
     If the job needs more of a filament than is left on the loaded spool, the card says
     **Not enough filament loaded**, and pressing Set Ready asks first; you can carry on
     anyway.
@@ -200,7 +201,9 @@ With the Watchtower login set:
   - that its assigned printer has everything, or what that printer is missing;
   - that no printer has everything, with the closest printer and what to load into it.
 
-Jobs with everything loaded have a green edge, the others a red one. **Hide jobs with
+Jobs for shop orders are listed first, then the rest; within each group, jobs that can't
+run anywhere yet lead, followed by Watchtower's own order. Jobs with everything loaded
+have a green edge, the others a red one. **Hide jobs with
 filament loaded** leaves only the ones that need attention; the choice is remembered per
 device.
 
@@ -259,7 +262,8 @@ standing at the machine can see what it needs without opening the page.
   back until a job is sent.
 - **Receiving a job:** the job's name and a bar that fills as Watchtower sends it.
 - **A job list:** swipe sideways, or tap the top bar, for the waiting jobs that could
-  come to that printer, in Watchtower's order, each marked queued, assigned here or
+  come to that printer, jobs for orders first and then in Watchtower's order, each
+  marked queued, assigned here or
   soft-assigned to another printer. Tap a job to see the filaments it needs and which
   of them this printer has loaded.
 - **Dimming:** the screen dims after five minutes without a touch, and a touch brings
