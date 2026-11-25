@@ -31,6 +31,8 @@ substitutions:
   touch_mirror_x: "false"
   touch_mirror_y: "false"
   # Optional: bake values in at build time instead of entering them on the board.
+  # How many waiting jobs the job list can hold. The server sends up to this many.
+  max_jobs: "30"
   default_server: ""
   default_token: ""
 
@@ -322,20 +324,20 @@ globals:
   - {id: g_page_at, type: uint32_t,   initial_value: "0"}     # when the queue page was opened
   - {id: g_q_n,     type: int,        initial_value: "0"}
   - {id: g_q_more,  type: int,        initial_value: "0"}
-  - {id: g_q_name,  type: "std::array<std::string, 8>"}
-  - {id: g_q_time,  type: "std::array<std::string, 8>"}
-  - {id: g_q_ok,    type: "std::array<bool, 8>"}
-  - {id: g_q_ncol,  type: "std::array<int, 8>"}
-  - {id: g_q_col,   type: "std::array<std::array<uint32_t, 4>, 8>"}
+  - {id: g_q_name,  type: "std::array<std::string, ${max_jobs}>"}
+  - {id: g_q_time,  type: "std::array<std::string, ${max_jobs}>"}
+  - {id: g_q_ok,    type: "std::array<bool, ${max_jobs}>"}
+  - {id: g_q_ncol,  type: "std::array<int, ${max_jobs}>"}
+  - {id: g_q_col,   type: "std::array<std::array<uint32_t, 4>, ${max_jobs}>"}
   # Each job's filaments, for the page a tap on a job opens.
-  - {id: g_q_tag,   type: "std::array<std::string, 8>"}        # "Queued", "Assigned here", "Soft: P1S-3"
-  - {id: g_q_fn,    type: "std::array<int, 8>"}
-  - {id: g_q_fx,    type: "std::array<int, 8>"}                # filaments beyond the four shown
-  - {id: g_q_id,    type: "std::array<int, 8>"}                # Watchtower's job number, 0 if not sent
+  - {id: g_q_tag,   type: "std::array<std::string, ${max_jobs}>"}        # "Queued", "Assigned here", "Soft: P1S-3"
+  - {id: g_q_fn,    type: "std::array<int, ${max_jobs}>"}
+  - {id: g_q_fx,    type: "std::array<int, ${max_jobs}>"}                # filaments beyond the four shown
+  - {id: g_q_id,    type: "std::array<int, ${max_jobs}>"}                # Watchtower's job number, 0 if not sent
   - {id: g_next_job, type: int,       initial_value: "0"}      # job being moved to the top of the queue
   - {id: g_url_next, type: std::string, initial_value: '""'}
-  - {id: g_q_ft,    type: "std::array<std::array<std::string, 4>, 8>"}
-  - {id: g_q_fok,   type: "std::array<std::array<bool, 4>, 8>"}
+  - {id: g_q_ft,    type: "std::array<std::array<std::string, 4>, ${max_jobs}>"}
+  - {id: g_q_fok,   type: "std::array<std::array<bool, 4>, ${max_jobs}>"}
   - {id: g_q_top,   type: int,        initial_value: "0"}     # first job shown in the list
   - {id: g_q_sel,   type: int,        initial_value: "-1"}    # job opened, -1 = the list
   # Swipe tracking: where the finger went down and where it was last seen.
@@ -395,10 +397,11 @@ script:
                   # Who is asking, for the list of displays on the MakeReady page.
                   X-Display-Version: "${version}"
                   X-Display-Screen: "${screen_model}"
+                  X-Display-Jobs: "${max_jobs}"        # how many jobs this firmware can list
                   X-Display-Name: !lambda return id(name_in_use).state.c_str();
                   X-Display-Ip: !lambda return id(ip_addr).state.c_str();
                 capture_response: true
-                max_response_buffer_size: 6144
+                max_response_buffer_size: 16384     # room for the whole job list
                 on_response:
                   then:
                     - lambda: |-
@@ -464,7 +467,7 @@ script:
                           bool full = !root["jobs"].isNull();
                           JsonArray jobs = full ? root["jobs"] : root["queue"];
                           for (JsonObject j : jobs) {
-                            if (q >= 8) break;
+                            if (q >= ${max_jobs}) break;
                             id(g_q_name)[q] = j["n"] | "";
                             id(g_q_time)[q] = j["t"] | "";
                             id(g_q_ok)[q] = j["ok"] | false;

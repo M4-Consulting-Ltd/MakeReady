@@ -165,7 +165,7 @@ first touch only wakes the screen and doesn't press anything.
 ### The queue page
 
 Swipe left or right across the screen, or tap the top bar, to see the jobs waiting for
-this printer's model (up to eight): jobs for shop orders first, then in Watchtower's
+this printer's model (up to thirty): jobs for shop orders first, then in Watchtower's
 order. Each shows its name, print
 time, the colours it needs, and a green "ready to run" or red "needs filament" depending
 on what this printer has loaded. A label on the right says where the job stands:
