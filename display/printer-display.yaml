@@ -536,7 +536,8 @@ script:
           body: "{}"
       - delay: 1500ms                  # give Watchtower a beat
       - lambda: |-
-          if (id(g_next_job) > 0) { id(g_next_job) = 0; id(g_q_sel) = -1; id(g_q_top) = 0; }
+          // After "print this next", go back to the printer screen.
+          if (id(g_next_job) > 0) { id(g_next_job) = 0; id(g_q_sel) = -1; id(g_q_top) = 0; id(g_page) = 0; }
       - globals.set: {id: g_sending, value: "false"}
       - script.execute: fetch
 
@@ -781,7 +782,9 @@ display:
             bool held = id(btn_touch).state;
             it.filled_rectangle(10, 186, 300, 48, id(g_sending) ? MUTED : held ? GREEN : GO);
             it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER,
-                     id(g_sending) ? "Sending..." : held ? "Keep holding..." : "Hold: print this next");
+                     id(g_sending) ? "Sending..." : held ? "Keep holding..."
+                     // Waiting for Set Ready with the filament loaded: the hold sets it ready too.
+                     : ok && !id(g_button).empty() ? "Hold: print this now" : "Hold: print this next");
           } else {
             it.print(160, 221, id(f_small), MUTED, TextAlign::TOP_CENTER, "Tap to go back");
           }

@@ -185,8 +185,13 @@ again to go back to the list.
 
 **Hold: print this next**, at the bottom of that page, moves the job to the top of
 Watchtower's queue, so it is the next one sent to a suitable printer that is ready with
-its filament loaded. Hold it for a second, as with Set Ready. It changes the queue's
-order only; it doesn't start the print on this printer by itself.
+its filament loaded. Hold it for a second, as with Set Ready, and the display goes back
+to the printer screen.
+
+If the printer is waiting for Set Ready and has the job's filament loaded, the same hold
+also sets it ready, and the button reads **Hold: print this now**: only hold it once
+the plate is clear. Otherwise it changes the
+queue's order only: without the filament, Set Ready would just bring a different job.
 
 Swipe sideways or tap the top bar to return to the printer page; it also returns by
 itself after 30 seconds without a touch. Two small dots in the top bar show which page

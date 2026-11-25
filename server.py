@@ -2034,6 +2034,21 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(404, b'{"error":"That job is not on this display\'s list."}')
                 return
             status, out = queue_next(want)
+            # Someone standing at a printer that is waiting for Set Ready, picking a job
+            # it has the filament for, wants that job on this printer: set it ready too.
+            # Without the filament Set Ready would only bring some other job, so then the
+            # job just moves up.
+            job = next(j for j in listed if str(j.get("id")) == want)
+            printers, _ = printers_cached()
+            p = next((x for x in printers if x.get("name") == name), None)
+            if (status == 200 and p is not None and printer_state(p) == "plate"
+                    and not job["missing_by"][name]):
+                code, _body, _ra = upstream("POST", "/printers/%s/commands"
+                                            % urllib.parse.quote(name, safe=""),
+                                            COMMANDS["set-ready"])
+                out["ready"] = code < 300
+                with LOCK:
+                    PRINTERS["at"] = 0
             self.send(status, json.dumps(out).encode())
             return
         if parts == ["", "api", "display", "resume"]:
