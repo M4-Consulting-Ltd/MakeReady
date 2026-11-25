@@ -3,10 +3,10 @@
 Gets each printer in a [Watchtower](https://watchtower3d.com) 3D-printer farm **ready
 for its next job**, so Watchtower can send it one.
 
-"Makeready" is the commercial printers' word for everything done to a press between one
-job and the next. (This project was called Watchtower-SetReady until November 2026. The old
-repository address redirects here; the Docker image is now only published as
-`makeready`.)
+"Makeready" is the commercial printing trade's word for everything done to a press
+between one job and the next. (This project was called Watchtower-SetReady until
+November 2026. The old repository address redirects here; the Docker image is now
+published only as `makeready`.)
 
 Watchtower runs the queue: it decides which job goes to which printer and sends it.
 It can only do that once a printer has been cleared and marked ready, and has the
@@ -45,7 +45,7 @@ loaded filament; see [Cameras and queue](#cameras-and-queue-optional).
 
 It can also drive a small **touch screen on the front of each printer**, showing that
 printer's progress and what to load next, with its own Set Ready button. The page lists
-the displays, shows which are connected and updates their firmware. See
+the displays, shows which are connected and can update their firmware. See
 [Printer displays](#printer-displays).
 
 ![The page showing six printers with camera pictures, loaded filament and buttons, above a list of waiting jobs](docs/screenshot.png)
@@ -136,7 +136,7 @@ same name. Environment variables win.
 | `HOST` | `127.0.0.1` (default) serves the page only on this computer; `0.0.0.0` makes it reachable from the network |
 | `PORT` | Port to listen on, default `8080` |
 | `WATCHTOWER_CA` | Path to Watchtower's CA certificate (PEM), to verify `https://` properly instead of skipping the check |
-| `PAGE_PASSWORD` | The page password, in plain text; takes precedence over one set in Settings |
+| `PAGE_PASSWORD` | The page password, in plain text; takes precedence over one set in Settings. Set only this way, devices may have to log in again after a restart |
 | `CONFIG_DIR` | Folder holding `config.json` (environment only) |
 | `REREAD_GAP` | Seconds to wait between AMS slots when re-reading tags, default `15` (environment only) |
 | `WATCHTOWER_URL`, `WATCHTOWER_API_KEY`, `WATCHTOWER_USERNAME`, `WATCHTOWER_PASSWORD` | The same values as the Settings dialog |
@@ -161,7 +161,10 @@ Confirmations, so a stray touch on a wall tablet can't move a machine or lose a 
 
 If Watchtower refuses a command, the reason appears under the button.
 
-The page refreshes every 5 seconds. The browser tab title shows how many plates are
+With the Watchtower login set, a card also says **Receiving a job** with the job's name
+and a progress bar while Watchtower is sending that printer a job.
+
+The printers refresh every 5 seconds, and the waiting jobs and loaded filament every 15. The browser tab title shows how many plates are
 waiting, e.g. `(2) MakeReady`.
 
 ### Cameras
@@ -180,8 +183,7 @@ With the Watchtower login set:
   of the AMS slots Watchtower shows as empty, for when you have put a spool in during a
   print and it hasn't been picked up. Each slot takes several seconds, and the swatches
   update as it is read. Slots that already have a reading are left alone. Only Bambu
-  spools with a tag can be read this way. Below it, advice
-  about the queue:
+  spools with a tag can be read this way. Below the swatches is advice about the queue:
   - *Idle printer* (plate waiting, or ready): either **Set Ready can pick up a waiting
     job**, naming the job highest in Watchtower's queue that its loaded filament can
     run, or **No waiting job can run here yet**, with the job highest in the queue and
@@ -193,10 +195,10 @@ With the Watchtower login set:
     anywhere and this printer is the closest fit.
 - **Under the cards:** the **Waiting jobs** list. Each job shows the filaments it needs
   and the weight of each, e.g. "Gold PLA Basic (15g)", with missing ones outlined in
-  red, and a verdict:
+  red, and a verdict, one of:
   - which printers can run it now;
-  - its assigned printer has everything, or is missing something;
-  - no printer has everything, with the closest printer and what to load into it.
+  - that its assigned printer has everything, or what that printer is missing;
+  - that no printer has everything, with the closest printer and what to load into it.
 
 Jobs with everything loaded have a green edge, the others a red one. **Hide jobs with
 filament loaded** leaves only the ones that need attention; the choice is remembered per
@@ -212,8 +214,8 @@ The matching is this page's own estimate, not Watchtower's scheduler:
 - colour must be the same for jobs in "exact" mode, and close for jobs in "closest" mode;
 - only printers of the job's model are considered;
 - empty slots count as nothing loaded;
-- grams left is an estimate: the printer's reported percentage of the spool's full
-  weight. It is used for the low-filament warning, not for matching.
+- grams left is an estimate: the percentage the printer reports, applied to the spool's
+  full weight. It is used for the low-filament warning, not for matching.
 
 Watchtower makes the final decision, so treat "load X into Y" as a guide.
 
@@ -260,8 +262,8 @@ standing at the machine can see what it needs without opening the page.
   come to that printer, in Watchtower's order, each marked queued, assigned here or
   soft-assigned to another printer. Tap a job to see the filaments it needs and which
   of them this printer has loaded.
-- **Dimming:** half brightness after five minutes without a touch; a touch brings it
-  back.
+- **Dimming:** the screen dims after five minutes without a touch, and a touch brings
+  it back. Whether it dims, and how far, is [set for all displays](#settings-for-all-displays).
 
 ### The hardware
 
@@ -305,15 +307,18 @@ Each board has its own settings page on your network, where you can also:
 *Mock-up of a board's settings page.*
 
 Full instructions, troubleshooting and how to build the firmware yourself are in
-[display/README.md](display/README.md).
+[display/README.md](display/README.md). There is a printable case for the ESP32-32E
+board in [display/case](display/case/README.md).
 
 ### Keeping track of many displays
 
 **Settings → Printer displays** lists every display with a token: whether it is
 connected (each one calls the server every 10 seconds), when it was last seen, its name
-and address (a link to its own settings page), and its firmware version. When a newer
-firmware is published the row says so, with an **Update** button; **Update all** does
-every outdated display, three at a time so the whole farm isn't dark at once. The server
+and address (a link to its own settings page), and its firmware version. The list also
+names the latest firmware. When a display is behind, its row says so and has an
+**Update** button; **Update all** does every outdated display, three at a time so the
+whole farm isn't dark at once. The server looks for new firmware whenever Settings is
+opened, and **Check for new firmware** looks on demand. The server
 doesn't send the firmware: it asks the display, in its next reply, to fetch and install
 the latest version itself, so displays still need to reach github.com.
 
@@ -341,20 +346,20 @@ within about 10 seconds, and they are kept in `config.json`.
 
 ### What a display can do
 
-Each token is tied to one printer. With it, a board can read that printer's summary and
-send Set Ready for it or take it back, resume a paused print, and nothing else: no other printers, no cameras, no settings, no
-pause or stop. Tokens are stored hashed and can be revoked in Settings. The board's own
+Each token is tied to one printer. With it, a board can read that printer's summary,
+send Set Ready for it or take it back, and resume a paused print. It can do nothing
+else: no other printers, no cameras, no settings, no pause or stop. Tokens are stored hashed and can be revoked in Settings. The board's own
 settings page has no login, so anyone on your Wi-Fi can change a board's server address,
 token or firmware.
 
 ### Status
 
 Running on real boards: two-socket ESP32-2432S028 boards with the ST7789 screen, and an
-LCDWiki ESP32-32E board with the ILI9341 screen. Flashing, on-screen setup, the printer
-screens, live data and the "receiving a job" bar all work, the boards have been updated
-over Wi-Fi, and touch works on the ESP32-32E board. Built but not yet confirmed one by
-one on hardware: Not ready, Resume, dimming, renaming a board, and updating displays
-from the MakeReady page.
+LCDWiki ESP32-32E board with the ILI9341 screen. Confirmed on those: flashing, on-screen
+setup, the printer screens, live data, the "receiving a job" bar, renaming a board, and
+updating over Wi-Fi; touch has been confirmed on the ESP32-32E board. Built but not yet confirmed one by one on hardware: Not
+ready, Resume, the shared dimming setting, moving displays to a new server address, and
+updating displays from the MakeReady page.
 
 ## Running it permanently
 
@@ -433,8 +438,11 @@ run `docker build -t makeready .` in this folder.
   for outside access use a VPN or a reverse proxy that adds HTTPS.
 - **Secrets stay on the server:** the API key and Watchtower password are held in
   `config.json` (written readable only by its owner) and never sent to the browser.
-- **Limited commands:** the server forwards only `set_ready`, `resume`, `pause` and
-  `cancel`, and only to the Watchtower address in Settings.
+- **Limited commands:** the only things the server will ask Watchtower to do are
+  `set_ready`, `resume`, `pause` and `cancel`, taking a Set Ready back, and re-reading
+  the tags of empty AMS slots, and only at the Watchtower address in Settings.
+- **Open without the password:** the home-screen icons and the page's name, and the
+  calls made by displays, which carry their own tokens.
 - **Other websites can't drive it:** cross-origin requests are refused and the page
   can't be embedded in a frame.
 
@@ -460,14 +468,21 @@ Private web API, using the Watchtower login:
 | Page calls | Watchtower call |
 |---|---|
 | `GET /api/cameras`, `GET /api/camera/{name}` | `GET /api/system/streams`, `GET /api/go2rtc/frame.jpeg?src=…` |
-| `GET /api/queue` | `GET /api/queue`, `GET /api/filament/assignments`, `GET /api/printers` |
+| `GET /api/queue` | `GET /api/queue` (waiting jobs, and those being sent), `GET /api/filament/assignments`, `GET /api/printers`, and `GET /api/orders/{id}` once per order for its number. Colour names also use `GET {base}/spools` from the public API |
 | `POST /api/printers/{name}/reread-filament` | Socket.IO event `printer_command` with `{"command":"read_slot_rfid","args":{"ams_index","tray_index"}}`, once per AMS slot |
 | `POST /api/printers/{name}/not-ready` | Socket.IO event `printer_set_ready` with `{"printer_name","ready":false}`, the way Watchtower's own page does it |
 
-The server's own calls: `GET`/`POST /api/config` (settings), `GET /api/session`,
-`POST /api/login` and `POST /api/logout` (page password), `GET`/`POST /api/displays`
-(display tokens), and for the displays themselves `GET /api/display` and
-`POST /api/display/set-ready`, `POST /api/display/not-ready` and `POST /api/display/resume`, authorised by a display token.
+The server's own calls:
+
+- `GET`/`POST /api/config` (settings);
+- `GET /api/session`, `POST /api/login` and `POST /api/logout` (page password);
+- `GET`/`POST /api/displays` and `POST /api/displays/revoke` (display tokens),
+  `POST /api/displays/update` (firmware) and `POST /api/displays/settings` (settings for
+  all displays);
+- for the displays themselves, authorised by a display token: `GET /api/display`,
+  `POST /api/display/set-ready`, `POST /api/display/not-ready` and
+  `POST /api/display/resume`;
+- the home-screen icons and `manifest.webmanifest`.
 
 The state rules come from ClearCue: offline when `online` is false; printing when
 `busy` (paused or error if a status string says so); ready when `ready`; otherwise the
@@ -484,11 +499,10 @@ plate is waiting and the Set Ready button is live.
 - **Filament matching is an estimate**, as described
   [above](#loaded-filament-and-waiting-jobs).
 - **Jobs being sent** are read from a part of Watchtower's queue reply that has only
-  been seen on one install; the job's name may be missing.
+  been seen working on one install; the job's name may be missing.
 - **Not ready** uses the message Watchtower's own page sends, not a documented command.
-- **Order numbers** in front of job names come from the job's linked order. How
-  Watchtower reports them was worked out without seeing a real example, so they may not
-  appear on every install.
+- **Order numbers** in front of job names come from the job's linked order. That has
+  been seen working on one install only, so they may not appear on every one.
 - **Snapshots, not video.**
 
 ## Licence
