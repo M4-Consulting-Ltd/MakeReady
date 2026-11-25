@@ -46,6 +46,7 @@ import json
 import os
 import secrets
 import ssl
+import subprocess
 import sys
 import threading
 import time
@@ -1269,6 +1270,23 @@ def display_seen(ident, headers, address):
 # Settings that apply to every display, sent to each one with its printer's summary.
 DISPLAY_DEFAULTS = {"dim": True, "dim_level": 50,     # dim after 5 minutes idle, to this %
                     "server": ""}                     # address displays should move to, if any
+def app_version():
+    """This server's version, like the displays': commit date and short commit hash.
+    The Docker image is built with it; a git checkout is asked; otherwise unknown."""
+    v = (os.environ.get("MAKEREADY_VERSION") or "").strip()
+    if not v:
+        try:
+            v = subprocess.run(
+                ["git", "-C", HERE, "-c", "safe.directory=*", "log", "-1", "--abbrev=7",
+                 "--date=format-local:%Y.%m.%d", "--format=%cd-%h"],
+                capture_output=True, text=True, timeout=5, env=dict(os.environ, TZ="UTC"),
+            ).stdout.strip()
+        except Exception:
+            v = ""
+    return v[:40]
+
+
+VERSION = app_version()
 INSTANCE = secrets.token_hex(8)                       # lets this server recognise itself
 
 
@@ -1918,8 +1936,12 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/manifest.webmanifest":
             self.send(200, MANIFEST, "application/manifest+json")
         elif path == "/api/session":
-            self.send(200, json.dumps({"required": auth_required(), "authed": self.authed(),
-                                       "instance": INSTANCE}).encode())
+            authed = self.authed()
+            self.send(200, json.dumps({"required": auth_required(), "authed": authed,
+                                       "instance": INSTANCE,
+                                       # not shown to someone who hasn't logged in
+                                       "version": VERSION if authed or not auth_required() else "",
+                                       }).encode())
         elif path == "/api/display":
             # A printer display, identified by its own token instead of a page login.
             name = display_printer(self.headers)

@@ -45,6 +45,7 @@
   main { display: grid; gap: 12px; padding: 0 16px 24px; max-width: var(--page); margin: 0 auto;
          grid-template-columns: repeat(var(--cols, 1), minmax(0, var(--cardw, 680px)));
          justify-content: center; }
+  #version { color: var(--muted); font-size: 12px; text-align: center; padding: 0 16px 16px; }
   .empty { grid-column: 1 / -1; color: var(--muted); padding: 32px 0; text-align: center; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
           padding: 14px; display: flex; flex-direction: column; gap: 10px; }
@@ -363,6 +364,7 @@
   </div>
   <div id="queue-list"></div>
 </section>
+<footer id="version"></footer>
 
 <script>
 const POLL_MS = 5000;
@@ -606,7 +608,7 @@ document.getElementById('login-form').addEventListener('submit', async e => {
     needLogin = false;
     loginDlg.close();
     camsAt = 0; queueAt = 0;
-    refresh();
+    refresh(); showVersion();
   } catch (ex) {
     err.textContent = ex instanceof TypeError ? "Can't reach the MakeReady server." : ex.message;
   }
@@ -1309,8 +1311,15 @@ $('settings-form').addEventListener('submit', async e => {
   }
 });
 
+// The server's version, at the foot of the page (only once logged in).
+async function showVersion() {
+  try {
+    const s = await (await fetch('api/session', { cache: 'no-store' })).json();
+    document.getElementById('version').textContent = s.version ? 'MakeReady ' + s.version : '';
+  } catch (err) { /* the page works without it */ }
+}
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
-refresh();
+refresh(); showVersion();
 </script>
 </body>
 </html>

@@ -16,6 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - name: Version
+        id: version
+        # Commit date and short hash, the same form as the display firmware's version.
+        run: echo "version=$(TZ=UTC git log -1 --abbrev=7 --date=format-local:%Y.%m.%d --format=%cd-%h)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
@@ -28,6 +32,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: VERSION=${{ steps.version.outputs.version }}
           tags: |
             ghcr.io/m4-consulting-ltd/makeready:latest
             ghcr.io/m4-consulting-ltd/makeready:${{ github.sha }}
