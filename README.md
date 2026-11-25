@@ -201,6 +201,12 @@ With the Watchtower login set:
   - that its assigned printer has everything, or what that printer is missing;
   - that no printer has everything, with the closest printer and what to load into it.
 
+Each job has a **Print this next** button, which moves it to the top of Watchtower's
+queue after a confirmation. Watchtower sends jobs out in queue order, so that job goes
+to the next suitable printer that is ready with its filament loaded. Plates queued
+together move together. It changes the order only: it doesn't pick the printer or start
+anything by itself.
+
 Jobs for shop orders are listed first, then the rest; within each group, jobs that can't
 run anywhere yet lead, followed by Watchtower's own order. Jobs with everything loaded
 have a green edge, the others a red one. **Hide jobs with
@@ -265,7 +271,8 @@ standing at the machine can see what it needs without opening the page.
   come to that printer, jobs for orders first and then in Watchtower's order, each
   marked queued, assigned here or
   soft-assigned to another printer. Tap a job to see the filaments it needs and which
-  of them this printer has loaded.
+  of them this printer has loaded, with a **Print this next** button (held for a second)
+  that moves it to the top of Watchtower's queue.
 - **Dimming:** the screen dims after five minutes without a touch, and a touch brings
   it back. Whether it dims, and how far, is [set for all displays](#settings-for-all-displays).
 
@@ -351,8 +358,8 @@ within about 10 seconds, and they are kept in `config.json`.
 ### What a display can do
 
 Each token is tied to one printer. With it, a board can read that printer's summary,
-send Set Ready for it or take it back, and resume a paused print. It can do nothing
-else: no other printers, no cameras, no settings, no pause or stop. Tokens are stored hashed and can be revoked in Settings. The board's own
+send Set Ready for it or take it back, resume a paused print, and move a job from its
+own list to the top of the queue. It can do nothing else: no other printers, no cameras, no settings, no pause or stop. Tokens are stored hashed and can be revoked in Settings. The board's own
 settings page has no login, so anyone on your Wi-Fi can change a board's server address,
 token or firmware.
 
@@ -443,8 +450,9 @@ run `docker build -t makeready .` in this folder.
 - **Secrets stay on the server:** the API key and Watchtower password are held in
   `config.json` (written readable only by its owner) and never sent to the browser.
 - **Limited commands:** the only things the server will ask Watchtower to do are
-  `set_ready`, `resume`, `pause` and `cancel`, taking a Set Ready back, and re-reading
-  the tags of empty AMS slots, and only at the Watchtower address in Settings.
+  `set_ready`, `resume`, `pause` and `cancel`, taking a Set Ready back, re-reading the
+  tags of empty AMS slots, and moving a waiting job to the top of the queue, and only
+  at the Watchtower address in Settings.
 - **Open without the password:** the home-screen icons and the page's name, and the
   calls made by displays, which carry their own tokens.
 - **Other websites can't drive it:** cross-origin requests are refused and the page
@@ -474,6 +482,7 @@ Private web API, using the Watchtower login:
 | `GET /api/cameras`, `GET /api/camera/{name}` | `GET /api/system/streams`, `GET /api/go2rtc/frame.jpeg?src=…` |
 | `GET /api/queue` | `GET /api/queue` (waiting jobs, and those being sent), `GET /api/filament/assignments`, `GET /api/printers`, and `GET /api/orders/{id}` once per order for its number. Colour names also use `GET {base}/spools` from the public API |
 | `POST /api/printers/{name}/reread-filament` | Socket.IO event `printer_command` with `{"command":"read_slot_rfid","args":{"ams_index","tray_index"}}`, once per AMS slot |
+| `POST /api/queue/{id}/next` | `GET /api/auth/csrf-token`, then `POST /api/queue/reorder` with `{"job_order":[…]}`: every waiting job's id, the chosen one first |
 | `POST /api/printers/{name}/not-ready` | Socket.IO event `printer_set_ready` with `{"printer_name","ready":false}`, the way Watchtower's own page does it |
 
 The server's own calls:
@@ -484,8 +493,8 @@ The server's own calls:
   `POST /api/displays/update` (firmware) and `POST /api/displays/settings` (settings for
   all displays);
 - for the displays themselves, authorised by a display token: `GET /api/display`,
-  `POST /api/display/set-ready`, `POST /api/display/not-ready` and
-  `POST /api/display/resume`;
+  `POST /api/display/set-ready`, `POST /api/display/not-ready`,
+  `POST /api/display/resume` and `POST /api/display/next`;
 - the home-screen icons and `manifest.webmanifest`.
 
 The state rules come from ClearCue: offline when `online` is false; printing when

@@ -226,6 +226,7 @@
   .job.ok { border-left: 4px solid var(--green); }      /* a printer has every filament */
   .job .jname { font-weight: 600; overflow-wrap: anywhere; }
   .job .jmeta { color: var(--muted); font-size: 13px; }
+  .job button.next { margin-top: 8px; min-height: 32px; font-size: 13px; }
   .job .verdict { font-size: 14px; margin-top: 6px; }
   .job .verdict b { color: var(--red); }
   .lack { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
@@ -938,6 +939,24 @@ function renderCardFilament(name, c) {
   }
 }
 
+// "Print this next": Watchtower sends jobs in its queue order, so the job goes to the top.
+async function printNext(job, btn) {
+  if (!await ask('Print this next?', job.name + ' moves to the top of Watchtower\'s queue, ahead of ' +
+      'everything waiting. It is sent to the next suitable printer that is ready with its filament loaded.',
+      'Move to the top', 'Cancel')) return;
+  btn.disabled = true; btn.textContent = 'Moving…';
+  try {
+    const r = await fetch('api/queue/' + encodeURIComponent(job.id) + '/next',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (!r.ok) throw new Error(((await r.json().catch(() => ({}))).error) || 'Watchtower returned HTTP ' + r.status + '.');
+    queueAt = 0;
+    await refreshQueue(true);
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Print this next';
+    btn.after(el('div', 'reason', e instanceof TypeError ? "Can't reach the MakeReady server." : e.message));
+  }
+}
+
 function renderQueue(q) {
   lastQueue = q;
   for (const [name, c] of cards) renderCardFilament(name, c);
@@ -952,6 +971,7 @@ function renderQueue(q) {
   list.replaceChildren();
   if (q.error) list.append(el('p', 'jmeta', q.error));
   if (all.length && !jobs.length) list.append(el('p', 'jmeta', 'Every waiting job has its filament loaded.'));
+  const topOrder = Math.min(...all.map(j => j.order));
   for (const j of jobs) {
     const blocked = !!j.best && !j.printer;
     const ok = jobOk(j);
@@ -994,6 +1014,15 @@ function renderQueue(q) {
     // Watchtower's "no printers have required filament: PLA #FFFFFF, ..." only repeats the
     // chips above as colour codes, so show its reason only when it says something else.
     if (j.reason && !/#[0-9a-f]{6}/i.test(j.reason)) right.append(el('div', 'reason', 'Watchtower: ' + j.reason));
+    // Put this job at the top of Watchtower's queue, so it is the next one sent out.
+    if (j.order > topOrder) {
+      const next = el('button', 'plain next', 'Print this next');
+      next.type = 'button';
+      next.addEventListener('click', () => printNext(j, next));
+      left.append(next);
+    } else {
+      left.append(el('div', 'jmeta', 'Top of Watchtower\'s queue'));
+    }
     row.append(left, right);
     list.append(row);
   }

@@ -183,6 +183,11 @@ at a time: tap the bottom line, or swipe up or down, for the rest.
 marked "loaded" in green if this printer has it or "LOAD" in red if it doesn't. Tap
 again to go back to the list.
 
+**Hold: print this next**, at the bottom of that page, moves the job to the top of
+Watchtower's queue, so it is the next one sent to a suitable printer that is ready with
+its filament loaded. Hold it for a second, as with Set Ready. It changes the queue's
+order only; it doesn't start the print on this printer by itself.
+
 Swipe sideways or tap the top bar to return to the printer page; it also returns by
 itself after 30 seconds without a touch. Two small dots in the top bar show which page
 you are on.
@@ -226,6 +231,7 @@ There is a printable case for the 2.8inch ESP32-32E board in [`case/`](case/READ
 ## What a display is allowed to do
 
 A token works for one printer only. With it, a display can read that printer's summary
-and send Set Ready (or take it back) and resume a paused print for it. It can't see other printers, cameras or settings, and can't
+and send Set Ready (or take it back) and resume a paused print for it, and move a job
+from its own list to the top of the queue. It can't see other printers, cameras or settings, and can't
 pause or stop a print. Revoke a token under **Settings → Printer displays** if a screen
 is lost or replaced.
