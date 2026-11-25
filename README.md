@@ -272,7 +272,8 @@ standing at the machine can see what it needs without opening the page.
   marked queued, assigned here or
   soft-assigned to another printer. Tap a job to see the filaments it needs and which
   of them this printer has loaded, with a **Print this next** button (held for a second)
-  that moves it to the top of Watchtower's queue.
+  that moves it to the top of Watchtower's queue, and also sets the printer ready when
+  it is waiting for that with the job's filament loaded.
 - **Dimming:** the screen dims after five minutes without a touch, and a touch brings
   it back. Whether it dims, and how far, is [set for all displays](#settings-for-all-displays).
 
