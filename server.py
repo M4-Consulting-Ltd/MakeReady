@@ -330,6 +330,52 @@ def cam_fetch(path, timeout=TIMEOUT):
             raise
 
 
+def watchtower_post(path, body, timeout=TIMEOUT):
+    """POST to Watchtower's own web interface, the way its page does: logged in, with the
+    anti-forgery token it hands out. Returns the reply as a dict."""
+    token = (_unwrap(json.loads(cam_fetch("/api/auth/csrf-token"))) or {}).get("token") or ""
+    with CAM_LOCK:
+        opener = cam_opener()
+    req = urllib.request.Request(
+        root_url() + path, method="POST", data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json", "Accept": "application/json",
+                 "X-CSRF-Token": token, "Origin": root_url()})
+    with opener.open(req, timeout=timeout) as r:
+        reply = json.loads(r.read() or b"{}")
+    return reply if isinstance(reply, dict) else {}
+
+
+def queue_next(job_id):
+    """(status, body): move a waiting job to the top of Watchtower's queue, so it is the
+    next one sent out. Jobs queued together (plates of one file) move together."""
+    if not (all(cam_creds()) and root_url()):
+        return 400, {"error": "This needs the Watchtower login in Settings."}
+    try:
+        queue = _unwrap(json.loads(cam_fetch(QUEUE_PATH)))
+        jobs = [j for j in (queue.get("jobs") or []) if isinstance(j, dict) and j.get("id") is not None]
+        # Watchtower's current order, top first.
+        jobs.sort(key=lambda j: j["sort_order"] if isinstance(j.get("sort_order"), (int, float)) else 1e9)
+        target = next((j for j in jobs if str(j["id"]) == str(job_id)), None)
+        if target is None:
+            return 404, {"error": "That job is no longer waiting."}
+        group = target.get("row_group")
+        first = [j for j in jobs if j is target or (group and j.get("row_group") == group)]
+        rest = [j for j in jobs if j not in first]
+        order = [j["id"] for j in first + rest]
+        if order != [j["id"] for j in jobs]:
+            reply = watchtower_post("/api/queue/reorder", {"job_order": order})
+            if not reply.get("success"):
+                return 502, {"error": str(reply.get("error") or reply.get("message")
+                                          or "Watchtower didn't move the job.")[:200]}
+    except urllib.error.HTTPError as e:
+        return 502, {"error": "Watchtower refused to move the job (HTTP %d)." % e.code}
+    except Exception as e:
+        return 502, {"error": "Couldn't reach Watchtower: %s." % (getattr(e, "reason", None) or e)}
+    with CAM_LOCK:
+        CAM["queue_at"] = 0                       # show the new order straight away
+    return 200, {"ok": True}
+
+
 def cam_streams():
     """({printer name: stream name}, error). Chamber cameras first; online streams only."""
     user, password = cam_creds()
@@ -1461,6 +1507,7 @@ def display_summary(name):
         mins = j.get("minutes")
         lacking = j["missing_by"][name]
         out["jobs"].append({
+            "i": j.get("id"),                                # for "print this next"
             # where the job stands: "Queued", "Assigned here", "Soft: P1S-3"
             "a": "Queued" if not j.get("printer")
                  else ("Soft: here" if j.get("soft") else "Assigned here") if j["printer"] == name
@@ -1966,6 +2013,23 @@ class Handler(BaseHTTPRequestHandler):
                 PRINTERS["at"] = 0                           # show the new state straight away
             self.send(status, body or b"{}", retry_after=ra)
             return
+        if parts == ["", "api", "display", "next"]:
+            # From a printer display: put one of the jobs on its own list at the top of
+            # Watchtower's queue.
+            name = display_printer(self.headers)
+            if name is None:
+                self.send(401, b'{"error":"Unknown display token"}')
+                return
+            want = urllib.parse.parse_qs(self.path.partition("?")[2]).get("job", [""])[0]
+            listed = [j for j in queue_data().get("jobs") or []
+                      if name in (j.get("missing_by") or {})
+                      and (not j.get("printer") or j["printer"] == name or j.get("soft"))]
+            if not want or not any(str(j.get("id")) == want for j in listed):
+                self.send(404, b'{"error":"That job is not on this display\'s list."}')
+                return
+            status, out = queue_next(want)
+            self.send(status, json.dumps(out).encode())
+            return
         if parts == ["", "api", "display", "resume"]:
             # From a printer display: resume a paused print, only on the token's own printer.
             name = display_printer(self.headers)
@@ -2023,6 +2087,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(200, json.dumps({"token": token, "displays": display_list()}).encode())
             else:
                 self.send(400, b'{"error":"Choose a printer."}')
+            return
+        if len(parts) == 5 and parts[:3] == ["", "api", "queue"] and parts[4] == "next":
+            status, out = queue_next(urllib.parse.unquote(parts[3]))
+            self.send(status, json.dumps(out).encode())
             return
         if parts == ["", "api", "config"]:
             try:
