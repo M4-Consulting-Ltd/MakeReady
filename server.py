@@ -879,11 +879,17 @@ def build_queue(queue, assignments, table):
         info = table.get(str(pid)) or {"name": "Printer %s" % str(pid)[:8], "model": ""}
         models[info["name"]] = info["model"]
         slots = []
+        # The slot feeding the printer right now, if Watchtower says which.
+        using = (entry or {}).get("active_source")
+        using = using if isinstance(using, dict) and using.get("slot_index") is not None else None
         for a in (entry or {}).get("assignments") or []:
             if a.get("is_empty") or not a.get("material_type"):
                 continue
             ams = a.get("slot_type") == "ams"
             slots.append({
+                "active": bool(using and (using.get("source_type") == "ams") == ams
+                               and (using.get("system_index") or 0) == (a.get("system_index") or 0)
+                               and using["slot_index"] == (a.get("slot_index") or 0)),
                 "slot": ("AMS %d" % ((a.get("slot_index") or 0) + 1)) if ams else "External",
                 "order": (0 if ams else 1, a.get("system_index") or 0, a.get("slot_index") or 0),
                 "type": str(a["material_type"]).upper(),

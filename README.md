@@ -33,7 +33,8 @@ With just a Watchtower API key, it shows for each printer:
 Add a Watchtower username and password in Settings and it also shows:
 
 - a camera snapshot of each printer;
-- the filament loaded in each printer's slots, and what to load for the waiting jobs;
+- the filament loaded in each printer's slots, with a ring around the one in use, and
+  what to load for the waiting jobs;
 - when Watchtower is sending a printer a job, with progress;
 - the layer a print is on, beside its percentage (`Printing 64% · Layer 127/312`);
 - a **Not ready** button, to take a Set Ready back;
