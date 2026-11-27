@@ -148,10 +148,10 @@ firmware carries a compressed copy of it; after editing the page, run
   - An amber "Low:" line when the spool has less than the job needs.
 - **Hold: Set Ready:** appears when the plate is waiting to be cleared. Hold it for a
   second; it turns brighter while held, then sends. A brush against the screen does nothing.
-- **Hold: Resume print:** appears when the print is paused. Hold it for a second to
+- **Hold: Resume print:** appears when the print is paused. Hold it for most of a second to
   carry on. Check the printer first: it pauses for a reason, such as a filament runout.
 - **Hold: Not ready:** an outlined button on a ready printer, until a job is sent to it.
-  Hold it for a second to take a Set Ready back (needs the Watchtower login in the
+  Hold it for most of a second to take a Set Ready back (needs the Watchtower login in the
   MakeReady page's Settings).
 
 ### Dimming
@@ -185,7 +185,7 @@ again to go back to the list.
 
 **Hold: print this next**, at the bottom of that page, moves the job to the top of
 Watchtower's queue, so it is the next one sent to a suitable printer that is ready with
-its filament loaded. Hold it for a second, as with Set Ready, and the display goes back
+its filament loaded. Hold it for most of a second, as with Set Ready, and the display goes back
 to the printer screen.
 
 If the printer is waiting for Set Ready and has the job's filament loaded, the same hold
