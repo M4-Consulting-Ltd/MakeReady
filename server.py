@@ -277,7 +277,7 @@ CAM = {}
 def cam_reset():
     with CAM_LOCK:
         CAM.update(opener=None, streams={}, streams_at=0, retry_at=0, error="", frames={},
-                   queue=None, queue_at=0, names=None, names_at=0)
+                   queue=None, queue_at=0, names=None, names_at=0, layers={}, layers_at=0)
 
 
 def cam_creds():
@@ -565,6 +565,81 @@ def printer_table():
     with CAM_LOCK:
         CAM.update(names=table, names_at=time.time() if table else 0)
     return table
+
+
+LAYERS_TTL = 10      # seconds to reuse the layer counts
+LAYER_KEYS = (("layer_current", "layer_total"), ("current_layer", "total_layers"),
+              ("layer_num", "total_layer_num"), ("layer", "layers"))
+
+
+def _layer_pair(p):
+    """(current, total) layer of a printer record, or None. Looks at the record and its
+    'telemetry'; Watchtower sends the numbers as text."""
+    for src in (p, p.get("telemetry")):
+        if not isinstance(src, dict):
+            continue
+        for now_key, total_key in LAYER_KEYS:
+            try:
+                cur, total = int(float(src[now_key])), int(float(src[total_key]))
+            except (KeyError, TypeError, ValueError):
+                continue
+            if total > 0 and 0 <= cur <= total:
+                return cur, total
+    return None
+
+
+def layer_table():
+    """{printer name: (current layer, total layers)} from the private printer list, which
+    carries each printer's telemetry. Empty without the Watchtower login."""
+    if not (all(cam_creds()) and root_url()):
+        return {}
+    now = time.time()
+    with CAM_LOCK:
+        if now < CAM["retry_at"]:
+            return {}
+        if now - CAM["layers_at"] < LAYERS_TTL:
+            return CAM["layers"]
+    table = {}
+    try:
+        data = _unwrap(json.loads(cam_fetch("/api/printers")))
+        if isinstance(data, dict) and isinstance(data.get("printers"), (list, dict)):
+            data = data["printers"]
+        for p in (data.values() if isinstance(data, dict) else data or []):
+            if not isinstance(p, dict):
+                continue
+            name = next((p[k] for k in ("name", "printer_name", "display_name") if p.get(k)), None)
+            pair = _layer_pair(p)
+            if name and pair:
+                table[str(name)] = pair
+    except Exception:
+        pass
+    with CAM_LOCK:
+        CAM.update(layers=table, layers_at=time.time())
+    return table
+
+
+def printer_layers(p):
+    """(current, total) layer for a printer from the public list, or None."""
+    return _layer_pair(p) or layer_table().get(p.get("name"))
+
+
+def with_layers(body):
+    """The public printer list with 'layer_current' and 'layer_total' added to busy
+    printers, for the page. Returned untouched if anything about it is unexpected."""
+    try:
+        reply = json.loads(body)
+        data = reply.get("data", reply) if isinstance(reply, dict) else reply
+        found = data.get("printers") if isinstance(data, dict) else data
+        changed = False
+        for p in found or []:
+            if isinstance(p, dict) and p.get("busy") and not _layer_pair(p):
+                pair = layer_table().get(p.get("name"))
+                if pair:
+                    p["layer_current"], p["layer_total"] = pair
+                    changed = True
+        return json.dumps(reply).encode() if changed else body
+    except Exception:
+        return body
 
 
 def _job_name(job, md):
@@ -1465,6 +1540,7 @@ def display_summary(name, max_jobs=8):
     out = {"title": name, "state": "unknown", "status": "", "sub": "", "head": "", "good": False,
            "job": "", "fil": [], "warn": "", "button": "",
            "pct": -1, "left": "", "done": "",             # progress bar and big times
+           "layer": "",                                   # "120/300" while printing
            "bar": "",                                     # wording for the bar, when not printing
            "resume": False,                               # offer "Resume" (paused)
            "undo": False,                                 # offer "Not ready" (takes Set Ready back)
@@ -1480,6 +1556,9 @@ def display_summary(name, max_jobs=8):
     if state == "printing" and isinstance(p.get("progress"), (int, float)):
         out["pct"] = max(0, min(100, round(p["progress"])))   # Watchtower reports 0-100
         out["status"] += " %d%%" % out["pct"]
+    layers = printer_layers(p) if state in ("printing", "paused") else None
+    if layers:
+        out["layer"] = "%d/%d" % layers
     mins = p.get("eta_minutes")
     if state in ("printing", "paused") and isinstance(mins, (int, float)) and mins >= 0:
         mins = round(mins)
@@ -1992,6 +2071,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(404, b'{"error":"No camera frame"}')
         elif path == "/api/printers":
             status, body, ra = upstream("GET", "/printers")
+            if status == 200:
+                body = with_layers(body)
             self.send(status, body, retry_after=ra)
         else:
             self.send(404, b'{"error":"Not found"}')

@@ -305,6 +305,7 @@ globals:
   - {id: g_left,   type: std::string, initial_value: '""'}   # e.g. "8h 51m"
   - {id: g_done,   type: std::string, initial_value: '""'}   # e.g. "18:57"
   - {id: g_pct,    type: int,         initial_value: "-1"}   # print progress, -1 = unknown
+  - {id: g_layer,  type: std::string, initial_value: '""'}   # e.g. "120/300", empty = unknown
   - {id: g_bar,    type: std::string, initial_value: '""'}   # bar wording when not printing, e.g. "RECEIVING 92%"
   - {id: g_touch_x, type: int,        initial_value: "0"}    # last touch, to show where it landed
   - {id: g_touch_y, type: int,        initial_value: "0"}
@@ -425,6 +426,7 @@ script:
                           id(g_left)   = root["left"]   | "";
                           id(g_done)   = root["done"]   | "";
                           id(g_pct)    = root["pct"]    | -1;
+                          id(g_layer)  = root["layer"]  | "";
                           id(g_bar)    = root["bar"]    | "";
                           id(g_head)   = root["head"]   | "";
                           id(g_good)   = root["good"]   | false;
@@ -910,8 +912,11 @@ display:
         it.filled_rectangle(10, 186, 300, 48, CARD);
         if (pct > 0) it.filled_rectangle(10, 186, 300 * pct / 100, 48, GO);
         it.rectangle(10, 186, 300, 48, GO);
+        // With the layer known the bar reads "64%  Layer 120/300".
         std::string label = bar ? id(g_bar)
-                          : id(g_pct) < 0 ? std::string("PRINTING") : "PRINTING " + std::to_string(pct) + "%";
+                          : id(g_pct) < 0 ? std::string("PRINTING")
+                          : id(g_layer).empty() ? "PRINTING " + std::to_string(pct) + "%"
+                          : std::to_string(pct) + "%  Layer " + id(g_layer);
         it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER, label.c_str());
       }
 
@@ -922,7 +927,7 @@ touchscreen:
     cs_pin: GPIO33
     interrupt_pin: GPIO36
     update_interval: 50ms
-    threshold: 400
+    threshold: 300                 # lighter presses count; the panel is resistive
     # If touches land in the wrong place, adjust these (see README.md).
     calibration:
       x_min: 280
@@ -972,7 +977,10 @@ touchscreen:
             bool up = dy < -60 && abs(dx) < 60, down = dy > 60 && abs(dx) < 60;
             bool bar = tap && per == 3 && id(g_sw_y0) >= 182;
             if (id(g_q_sel) >= 0) {
-              if (tap && !id(g_sending)) id(g_q_sel) = -1;
+              // A tap closes the job, except on its hold button: a hold that slips for a
+              // moment reads as a tap, and must not close the page under the finger.
+              bool on_button = id(g_sw_y0) >= 176 && id(g_q_id)[id(g_q_sel)] > 0;
+              if (tap && !on_button && !id(g_sending)) id(g_q_sel) = -1;
             } else if (up || (bar && id(g_sw_x0) >= 160)) {
               if (top + per < n) top += per;
             } else if (down || (bar && id(g_sw_x0) < 160)) {
@@ -991,20 +999,24 @@ binary_sensor:
   - platform: touchscreen
     id: btn_touch
     touchscreen_id: touch
-    x_min: 10
-    x_max: 310
-    y_min: 186
-    y_max: 234
-  # The same area, but only "on" after a one-second hold: this sends Set Ready.
+    x_min: 0
+    x_max: 320
+    y_min: 176
+    y_max: 240
+    filters:
+      - delayed_off: 250ms       # a resistive panel loses the finger for an instant
+  # The same area, but only "on" after a hold: this sends Set Ready. The area is a little
+  # larger than the drawn button, and short losses of contact don't restart the hold.
   - platform: touchscreen
     id: btn_held
     touchscreen_id: touch
-    x_min: 10
-    x_max: 310
-    y_min: 186
-    y_max: 234
+    x_min: 0
+    x_max: 320
+    y_min: 176
+    y_max: 240
     filters:
-      - delayed_on: 1s
+      - delayed_off: 250ms
+      - delayed_on: 700ms
     on_press:
       - if:
           condition:
