@@ -552,8 +552,12 @@ function render(printers) {
     const pct = state === 'printing' && typeof p.progress === 'number'
       ? Math.max(0, Math.min(100, Math.round(p.progress))) : null;   // Watchtower reports 0-100
     btn.style.setProperty('--pct', (pct || 0) + '%');
+    // Layer progress, when Watchtower reports it (it sends the numbers as text).
+    const lc = Number(p.layer_current ?? (p.telemetry || {}).layer_current),
+          lt = Number(p.layer_total ?? (p.telemetry || {}).layer_total);
+    const layer = state === 'printing' && lt > 0 && lc >= 0 && lc <= lt ? ' · Layer ' + lc + '/' + lt : '';
     const text = armed ? 'Tap again to resume'
-      : pct !== null ? 'Printing ' + pct + '%' : LABEL[state][1];
+      : pct !== null ? 'Printing ' + pct + '%' + layer : LABEL[state][1];
     c.el.classList.toggle('armed', armed);
     btn.textContent = sending ? 'Sending…' : text;
     btn.setAttribute('aria-disabled', !(state === 'plate' || state === 'paused') || sending);

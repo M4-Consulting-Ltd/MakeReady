@@ -305,6 +305,7 @@ globals:
   - {id: g_left,   type: std::string, initial_value: '""'}   # e.g. "8h 51m"
   - {id: g_done,   type: std::string, initial_value: '""'}   # e.g. "18:57"
   - {id: g_pct,    type: int,         initial_value: "-1"}   # print progress, -1 = unknown
+  - {id: g_layer,  type: std::string, initial_value: '""'}   # e.g. "120/300", empty = unknown
   - {id: g_bar,    type: std::string, initial_value: '""'}   # bar wording when not printing, e.g. "RECEIVING 92%"
   - {id: g_touch_x, type: int,        initial_value: "0"}    # last touch, to show where it landed
   - {id: g_touch_y, type: int,        initial_value: "0"}
@@ -425,6 +426,7 @@ script:
                           id(g_left)   = root["left"]   | "";
                           id(g_done)   = root["done"]   | "";
                           id(g_pct)    = root["pct"]    | -1;
+                          id(g_layer)  = root["layer"]  | "";
                           id(g_bar)    = root["bar"]    | "";
                           id(g_head)   = root["head"]   | "";
                           id(g_good)   = root["good"]   | false;
@@ -910,8 +912,11 @@ display:
         it.filled_rectangle(10, 186, 300, 48, CARD);
         if (pct > 0) it.filled_rectangle(10, 186, 300 * pct / 100, 48, GO);
         it.rectangle(10, 186, 300, 48, GO);
+        // With the layer known the bar reads "64%  Layer 120/300".
         std::string label = bar ? id(g_bar)
-                          : id(g_pct) < 0 ? std::string("PRINTING") : "PRINTING " + std::to_string(pct) + "%";
+                          : id(g_pct) < 0 ? std::string("PRINTING")
+                          : id(g_layer).empty() ? "PRINTING " + std::to_string(pct) + "%"
+                          : std::to_string(pct) + "%  Layer " + id(g_layer);
         it.print(160, 210, id(f_big), Color(255, 255, 255), TextAlign::CENTER, label.c_str());
       }
 

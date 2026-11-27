@@ -35,6 +35,7 @@ Add a Watchtower username and password in Settings and it also shows:
 - a camera snapshot of each printer;
 - the filament loaded in each printer's slots, and what to load for the waiting jobs;
 - when Watchtower is sending a printer a job, with progress;
+- the layer a print is on, beside its percentage (`Printing 64% · Layer 127/312`);
 - a **Not ready** button, to take a Set Ready back;
 - a **Waiting jobs** list under the printers: what each queued job needs and which
   printer could run it, or what would have to be loaded where. A job made from a shop
@@ -263,7 +264,8 @@ standing at the machine can see what it needs without opening the page.
 ### What it shows
 
 - **While printing:** estimated time left and estimated completion time in large type,
-  and a bar that fills as the print goes on.
+  and a bar that fills as the print goes on, with the percentage and, when the
+  Watchtower login is set, the layer.
 - **When paused:** the time left, still large, and a **Resume print** button.
 - **When the print is done:** either **Set Ready picks up:** with the next job, or
   **Load for next job:** with the filament to fetch, by colour name and weight. A warning
