@@ -181,6 +181,8 @@
   .sw { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--grey);
         background: var(--sw, transparent); flex: none; display: inline-block;
         position: relative; cursor: pointer; }
+  /* The filament feeding the printer now: a ring a little way out from the swatch. */
+  .sw.active { outline: 2px solid var(--text); outline-offset: 2px; }
   .sw::after { content: ""; position: absolute; inset: -7px; }      /* bigger tap target */
   .chip { cursor: pointer; }
   @media (pointer: coarse) { .loaded { gap: 10px; } .loaded .sw { width: 22px; height: 22px; } }
@@ -774,11 +776,12 @@ function filamentLabel(f) {
 }
 function filamentTitle(f) {
   return [filamentLabel(f), f.name, f.color, f.grams != null ? Math.round(f.grams) + ' g' : '',
-          f.left != null ? 'about ' + f.left + 'g left' : '', f.slot].filter(Boolean).join(' · ');
+          f.left != null ? 'about ' + f.left + 'g left' : '', f.slot,
+          f.active ? 'in use now' : ''].filter(Boolean).join(' · ');
 }
 function swatch(f) {
   const s = document.createElement('span');
-  s.className = 'sw';
+  s.className = f.active ? 'sw active' : 'sw';
   if (f.color) s.style.setProperty('--sw', f.color);
   s.dataset.tip = filamentTitle(f);
   s.setAttribute('role', 'img');
